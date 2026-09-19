@@ -44,9 +44,5 @@ AVIATIONSTACK_API_KEY=your_key_here
 
 ## How to Run
 ```powershell
-pytest tests/integration/test_flight_tool.py -s
-```
-or
-```powershell
 python tests/integration/test_flight_tool.py
 ```

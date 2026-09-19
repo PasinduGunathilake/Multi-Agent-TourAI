@@ -32,9 +32,5 @@ TAVILY_API_KEY=tvly-your_key_here
 
 ## How to Run
 ```powershell
-pytest tests/integration/test_tavily_tool.py -s
-```
-or
-```powershell
 python tests/integration/test_tavily_tool.py
 ```

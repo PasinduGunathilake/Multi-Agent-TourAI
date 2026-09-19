@@ -78,11 +78,6 @@ Verifies that generated strings match the standardized format expected by AI Age
 ---
 
 ## How to Run
-
-```powershell
-pytest tests/test_flight_tool.py -v
-```
-or
 ```powershell
 python tests/test_flight_tool.py
 ```

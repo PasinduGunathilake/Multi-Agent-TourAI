@@ -1,6 +1,5 @@
 import sys
 import io
-import pytest
 
 # Ensure UTF-8 output in Windows terminal
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")

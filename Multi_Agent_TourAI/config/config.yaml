@@ -1,0 +1,312 @@
+# Main Configuration & Domain Mappings for Multi-Agent-TourAI
+# MLOps Best Practice: Separation of domain configs and lookup tables from code logic
+
+# Airport and Country Mappings for Flight Agent
+country_aliases:
+  # North America
+  "usa": "US"
+  "u.s.a.": "US"
+  "america": "US"
+  "united states": "US"
+  "united states of america": "US"
+  "us": "US"
+  "canada": "CA"
+  "mexico": "MX"
+
+  # Europe
+  "uk": "GB"
+  "u.k.": "GB"
+  "britain": "GB"
+  "england": "GB"
+  "united kingdom": "GB"
+  "great britain": "GB"
+  "scotland": "GB"
+  "wales": "GB"
+  "northern ireland": "GB"
+  "gb": "GB"
+  "france": "FR"
+  "germany": "DE"
+  "deutschland": "DE"
+  "italy": "IT"
+  "italia": "IT"
+  "spain": "ES"
+  "españa": "ES"
+  "portugal": "PT"
+  "netherlands": "NL"
+  "holland": "NL"
+  "the netherlands": "NL"
+  "belgium": "BE"
+  "switzerland": "CH"
+  "swiss": "CH"
+  "austria": "AT"
+  "sweden": "SE"
+  "norway": "NO"
+  "denmark": "DK"
+  "finland": "FI"
+  "ireland": "IE"
+  "republic of ireland": "IE"
+  "russia": "RU"
+  "russian federation": "RU"
+  "ukraine": "UA"
+  "poland": "PL"
+  "greece": "GR"
+  "turkey": "TR"
+  "türkiye": "TR"
+
+  # Asia
+  "china": "CN"
+  "prc": "CN"
+  "peoples republic of china": "CN"
+  "japan": "JP"
+  "nippon": "JP"
+  "south korea": "KR"
+  "korea": "KR"
+  "republic of korea": "KR"
+  "rok": "KR"
+  "north korea": "KP"
+  "dprk": "KP"
+  "india": "IN"
+  "pakistan": "PK"
+  "bangladesh": "BD"
+  "sri lanka": "LK"
+  "srilanka": "LK"
+  "ceylon": "LK"
+  "vietnam": "VN"
+  "viet nam": "VN"
+  "thailand": "TH"
+  "malaysia": "MY"
+  "singapore": "SG"
+  "indonesia": "ID"
+  "philippines": "PH"
+  "the philippines": "PH"
+  "taiwan": "TW"
+  "republic of china": "TW"
+
+  # Middle East
+  "uae": "AE"
+  "dubai": "AE"
+  "united arab emirates": "AE"
+  "saudi arabia": "SA"
+  "ksa": "SA"
+  "israel": "IL"
+  "iran": "IR"
+  "islamic republic of iran": "IR"
+  "iraq": "IQ"
+  "qatar": "QA"
+  "egypt": "EG"
+
+  # Oceania
+  "australia": "AU"
+  "oz": "AU"
+  "new zealand": "NZ"
+  "nz": "NZ"
+
+  # South America
+  "brazil": "BR"
+  "brasil": "BR"
+  "argentina": "AR"
+  "colombia": "CO"
+  "chile": "CL"
+  "peru": "PE"
+  "venezuela": "VE"
+
+  # Africa
+  "south africa": "ZA"
+  "rsa": "ZA"
+  "nigeria": "NG"
+  "kenya": "KE"
+  "ghana": "GH"
+  "morocco": "MA"
+  "algeria": "DZ"
+
+  # Other notable mentions
+  "cuba": "CU"
+  "jamaica": "JM"
+  "iceland": "IS"
+  "greenland": "GL"
+  "antarctica": "AQ"
+
+
+
+
+country_airports:
+  # North America
+  "US": "JFK"  # New York (John F. Kennedy)
+  "CA": "YYZ"  # Toronto (Pearson)
+  "MX": "MEX"  # Mexico City
+
+  # Europe
+  "GB": "LHR"  # London (Heathrow)
+  "FR": "CDG"  # Paris (Charles de Gaulle)
+  "DE": "FRA"  # Frankfurt
+  "IT": "FCO"  # Rome (Fiumicino)
+  "ES": "MAD"  # Madrid (Barajas)
+  "PT": "LIS"  # Lisbon
+  "NL": "AMS"  # Amsterdam (Schiphol)
+  "BE": "BRU"  # Brussels
+  "CH": "ZRH"  # Zurich
+  "AT": "VIE"  # Vienna
+  "SE": "ARN"  # Stockholm (Arlanda)
+  "NO": "OSL"  # Oslo (Gardermoen)
+  "DK": "CPH"  # Copenhagen
+  "FI": "HEL"  # Helsinki
+  "IE": "DUB"  # Dublin
+  "RU": "SVO"  # Moscow (Sheremetyevo)
+  "UA": "KBP"  # Kyiv (Boryspil)
+  "PL": "WAW"  # Warsaw (Chopin)
+  "GR": "ATH"  # Athens
+  "TR": "IST"  # Istanbul
+
+  # Asia
+  "CN": "PEK"  # Beijing (Capital)
+  "JP": "HND"  # Tokyo (Haneda)
+  "KR": "ICN"  # Seoul (Incheon)
+  "IN": "DEL"  # Delhi (Indira Gandhi)
+  "PK": "KHI"  # Karachi (Jinnah)
+  "BD": "DAC"  # Dhaka (Shahjalal)
+  "LK": "CMB"  # Colombo (Bandaranaike)
+  "VN": "SGN"  # Ho Chi Minh City (Tan Son Nhat)
+  "TH": "BKK"  # Bangkok (Suvarnabhumi)
+  "MY": "KUL"  # Kuala Lumpur
+  "SG": "SIN"  # Singapore (Changi)
+  "ID": "CGK"  # Jakarta (Soekarno-Hatta)
+  "PH": "MNL"  # Manila (Ninoy Aquino)
+  "TW": "TPE"  # Taipei (Taoyuan)
+
+  # Middle East
+  "AE": "DXB"  # Dubai
+  "SA": "RUH"  # Riyadh (King Khalid)
+  "IL": "TLV"  # Tel Aviv (Ben Gurion)
+  "IR": "IKA"  # Tehran (Imam Khomeini)
+  "QA": "DOH"  # Doha (Hamad)
+  "EG": "CAI"  # Cairo
+
+  # Oceania
+  "AU": "SYD"  # Sydney (Kingsford Smith)
+  "NZ": "AKL"  # Auckland
+
+  # South America
+  "BR": "GRU"  # São Paulo (Guarulhos)
+  "AR": "EZE"  # Buenos Aires (Ministro Pistarini)
+  "CO": "BOG"  # Bogotá (El Dorado)
+  "CL": "SCL"  # Santiago (Arturo Merino Benítez)
+  "PE": "LIM"  # Lima (Jorge Chávez)
+
+  # Africa
+  "ZA": "JNB"  # Johannesburg (O.R. Tambo)
+  "NG": "LOS"  # Lagos (Murtala Muhammed)
+  "KE": "NBO"  # Nairobi (Jomo Kenyatta)
+  "MA": "CMN"  # Casablanca (Mohammed V)
+
+
+
+
+
+city_airports:
+  # North America
+  "new york": "JFK"
+  "los angeles": "LAX"
+  "chicago": "ORD"
+  "houston": "IAH"
+  "toronto": "YYZ"
+  "mexico city": "MEX"
+
+  # Europe
+  "london": "LHR"
+  "paris": "CDG"
+  "frankfurt": "FRA"
+  "berlin": "BER"
+  "rome": "FCO"
+  "madrid": "MAD"
+  "lisbon": "LIS"
+  "amsterdam": "AMS"
+  "brussels": "BRU"
+  "zurich": "ZRH"
+  "vienna": "VIE"
+  "stockholm": "ARN"
+  "oslo": "OSL"
+  "copenhagen": "CPH"
+  "helsinki": "HEL"
+  "dublin": "DUB"
+  "moscow": "SVO"
+  "kyiv": "KBP"
+  "warsaw": "WAW"
+  "athens": "ATH"
+  "istanbul": "IST"
+
+  # Asia
+  "beijing": "PEK"
+  "tokyo": "HND"
+  "seoul": "ICN"
+  "delhi": "DEL"
+  "mumbai": "BOM"
+  "bangalore": "BLR"
+  "kolkata": "CCU"
+  "chennai": "MAA"
+  "karachi": "KHI"
+  "dhaka": "DAC"
+  "colombo": "CMB"
+  "ho chi minh city": "SGN"
+  "bangkok": "BKK"
+  "kuala lumpur": "KUL"
+  "singapore": "SIN"
+  "jakarta": "CGK"
+  "manila": "MNL"
+  "taipei": "TPE"
+
+  # Middle East
+  "dubai": "DXB"
+  "riyadh": "RUH"
+  "tel aviv": "TLV"
+  "tehran": "IKA"
+  "doha": "DOH"
+  "cairo": "CAI"
+
+  # Oceania
+  "sydney": "SYD"
+  "melbourne": "MEL"
+  "auckland": "AKL"
+
+  # South America
+  "são paulo": "GRU"
+  "sao paulo": "GRU"
+  "buenos aires": "EZE"
+  "bogotá": "BOG"
+  "bogota": "BOG"
+  "santiago": "SCL"
+  "lima": "LIM"
+
+  # Africa
+  "johannesburg": "JNB"
+  "lagos": "LOS"
+  "nairobi": "NBO"
+  "casablanca": "CMN"
+
+
+stop_words:
+  - "flight"
+  - "flights"
+  - "ticket"
+  - "tickets"
+  - "trip"
+  - "travel"
+  - "traval"
+  - "plan"
+  - "complete"
+  - "days"
+  - "including"
+  - "hotel"
+  - "hotels"
+  - "sightseeing"
+  - "under"
+  - "budget"
+  - "info"
+  - "information"
+  - "to"
+  - "from"
+  - "for"
+  - "in"
+  - "at"
+  - "the"
+  - "a"
+  - "an"

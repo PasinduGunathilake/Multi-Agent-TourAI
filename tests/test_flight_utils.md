@@ -125,11 +125,6 @@ Tests every pattern branch implemented in `parse_route()`:
 ---
 
 ## How to Run
-
-```powershell
-pytest tests/test_flight_utils.py -v
-```
-or
 ```powershell
 python tests/test_flight_utils.py
 ```

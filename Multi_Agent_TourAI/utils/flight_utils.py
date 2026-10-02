@@ -235,8 +235,7 @@ def resolve_to_iata(location: Optional[str]) -> Optional[str]:
 ##---------------------Finding Mentions in Text--------------------------------
 def find_location_mentions(query: str) -> List[str]:
     """
-    Finds country or city names inside a natural language query
-    and preserves their appearance order in the text.
+    Finds country or city names inside a natural language query and preserves their appearance order in the text.
     """
     q = query.lower()
     found = []

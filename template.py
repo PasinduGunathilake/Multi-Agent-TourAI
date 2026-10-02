@@ -5,24 +5,29 @@ project_name = "Multi_Agent_TourAI"
 
 list_of_dirnfiles = [
     f"{project_name}/__init__.py",
+
+    # LLM module
+    f"{project_name}/llms/__init__.py",
+    f"{project_name}/llms/llm.py",
     
     # agents module
     f"{project_name}/agents/__init__.py",
-    f"{project_name}/agents/planner_agent.py",
+    f"{project_name}/agents/itinerary_agent.py",
     f"{project_name}/agents/flight_agent.py",
     f"{project_name}/agents/hotel_agent.py",
+    f"{project_name}/agents/final_agent.py",
 
-    # graph module
+    # graph module (state & workflow)
     f"{project_name}/graph/__init__.py",
     f"{project_name}/graph/state.py",
     f"{project_name}/graph/workflow.py",
 
-    # tools module
+    # tools module (API)
     f"{project_name}/tools/__init__.py",
     f"{project_name}/tools/flight_tool.py",
     f"{project_name}/tools/tavily_tool.py",
 
-    # memory & database module
+    # memory & database module (PostgresServer)
     f"{project_name}/memory/__init__.py",
     f"{project_name}/memory/checkpointer.py",
 

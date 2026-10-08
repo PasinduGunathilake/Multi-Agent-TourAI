@@ -52,5 +52,7 @@ def get_checkpointer() -> PostgresSaver:
 
     checkpointer = PostgresSaver(conn)
     checkpointer.setup()
+    logger.info("PostgreSQL Checkpointer connected & schema setup verified.")
+
     return checkpointer
 

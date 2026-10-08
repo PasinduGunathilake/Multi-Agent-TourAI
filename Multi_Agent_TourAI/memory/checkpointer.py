@@ -2,7 +2,6 @@ import os
 import psycopg
 import certifi
 from dotenv import load_dotenv
-from backend import database_url
 from psycopg.rows import dict_row
 from langgraph.checkpoint.postgres import PostgresSaver
 
@@ -14,7 +13,7 @@ os.environ["REQUEST_CA_BUNDLE"] = certifi.where()
 
 # Retrieves and formats the PostgreSQL database URL with SSL mode.
 def get_databaseUrl() -> str:
-    database_url = os.getenv("DATABASE_URL")
+    database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRESQL_URL")
 
     if not database_url:
         raise ValueError(
@@ -22,8 +21,8 @@ def get_databaseUrl() -> str:
         )
 
     if "sslmode" not in database_url:
-        separator = "g" if "?" in database_url else "?"
-        database_url = f"{database_url}{separator}sslmode = require"
+        separator = "&" if "?" in database_url else "?"
+        database_url = f"{database_url}{separator}sslmode=require"
 
     return database_url
 

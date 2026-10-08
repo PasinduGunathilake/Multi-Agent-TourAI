@@ -4,12 +4,10 @@ import certifi
 import requests
 import urllib3.util.connection as urllib_connection
 from dotenv import load_dotenv
+from Multi_Agent_TourAI.utils.flight_utils import (parse_route, resolve_to_iata, DEFAULT_ORIGIN_IATA,)
+from Multi_Agent_TourAI.utils import get_logger
 
-from Multi_Agent_TourAI.utils.flight_utils import (
-    parse_route,
-    resolve_to_iata,
-    DEFAULT_ORIGIN_IATA,
-)
+logger = get_logger(__name__)
 
 # Avoid Windows IPv6 TCP connection timeout delay
 urllib_connection.HAS_IPV6 = False
@@ -129,9 +127,12 @@ def flight_search(
         params["flight_date"] = date.strip()
 
     try:
+        logger.info(f"AviationStack API Request: Dep={dep_iata} -> Arr={arr_iata} | Date={date}")
         response = requests.get(BASE_URL, params=params, timeout=25)
         response.raise_for_status()
         data = response.json()
+        flight_data = data.get("data", [])
+        logger.info(f"AviationStack API Response: Found {len(flight_data)} flights.")
     except requests.exceptions.Timeout:
         route_str = f" for route {dep_iata} -> {arr_iata}" if (dep_iata or arr_iata) else ""
         return f"Flight search timed out connecting to AviationStack{route_str}."

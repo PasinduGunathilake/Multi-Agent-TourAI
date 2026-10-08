@@ -54,6 +54,7 @@ list_of_dirnfiles = [
     "README.md",
     "setup.py",
     "app.py",
+    "entrypoint.py",
     "backend.py",
     "requirements.txt",
     "templates/index.html",

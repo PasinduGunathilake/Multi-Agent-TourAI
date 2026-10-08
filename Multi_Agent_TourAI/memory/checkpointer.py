@@ -1,9 +1,13 @@
 import os
+from urllib.parse import urlparse
 import psycopg
 import certifi
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 from langgraph.checkpoint.postgres import PostgresSaver
+from Multi_Agent_TourAI.utils import get_logger, log_execution
+
+logger = get_logger(__name__)
 
 load_dotenv()
 # Environment & SSL Certificate Setup (Windows SSL Fix)
@@ -32,9 +36,13 @@ def get_databaseUrl() -> str:
 
 # persistance session/ working memory(persistance Short-term memory / Checkpointer)
 # saving in postgreserver - Resumability & Fault Tolerance.
+@log_execution
 def get_checkpointer() -> PostgresSaver:
     # Initializes and sets up the PostgresSaver checkpointer for LangGraph memory.
     database_url = get_databaseUrl()
+
+    parsed = urlparse(database_url)
+    logger.info(f"Connecting to PostgreSQL at Host: '{parsed.hostname}', DB: '{parsed.path[1:]}'")
 
     conn = psycopg.connect(
         database_url,

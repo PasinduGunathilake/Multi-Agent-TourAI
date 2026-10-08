@@ -7,6 +7,7 @@ from Multi_Agent_TourAI.utils.flight_utils import (
     parse_route,
     DEFAULT_ORIGIN_IATA,
 )
+from Multi_Agent_TourAI.utils.logger import get_logger, logger
 
 __all__ = [
     "clean_text",
@@ -16,4 +17,6 @@ __all__ = [
     "find_location_mentions",
     "parse_route",
     "DEFAULT_ORIGIN_IATA",
+    "get_logger",
+    "logger"
 ]

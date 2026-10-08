@@ -2,8 +2,15 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from Multi_Agent_TourAI.graph.state import TravelState
 from Multi_Agent_TourAI.llms.llm import llm
 from Multi_Agent_TourAI.config.prompts import (FINAL_RESPONSE_SYSTEM_PROMPT, FINAL_RESPONSE_PROMPT_TEMPLATE,)
+from Multi_Agent_TourAI.utils import get_logger, log_execution
 
+logger = get_logger(__name__)
+
+
+@log_execution
 def final_response_agent(state: TravelState):
+
+    logger.info("Synthesizing final travel response package...")
     prompt = FINAL_RESPONSE_PROMPT_TEMPLATE.format(
         user_query=state["user_query"],
         flight_results=state["flight_results"],

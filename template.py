@@ -56,10 +56,7 @@ list_of_dirnfiles = [
     "app.py",
     "entrypoint.py",
     "backend.py",
-    "requirements.txt",
-    "templates/index.html",
-    "static/script.js",
-    "static/styles.css",
+    "requirements.txt", # for Rest api, if you need frontend make separate dir and go on.
 ]
 
 for filepath in list_of_dirnfiles:

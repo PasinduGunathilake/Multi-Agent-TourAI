@@ -16,11 +16,18 @@ list_of_dirnfiles = [
     f"{project_name}/agents/flight_agent.py",
     f"{project_name}/agents/hotel_agent.py",
     f"{project_name}/agents/final_agent.py",
+    f"{project_name}/agents/weather_agent.py",
 
     # graph module (state & workflow)
     f"{project_name}/graph/__init__.py",
     f"{project_name}/graph/state.py",
     f"{project_name}/graph/workflow.py",
+
+    # mcp module
+    f"{project_name}/mcp/__init__.py",
+    f"{project_name}/mcp/aviationstack_mcp.py",
+    f"{project_name}/mcp/tavily_mcp.py",
+    f"{project_name}/mcp/weather_mcp.py",
 
     # tools module (API)
     f"{project_name}/tools/__init__.py",
@@ -29,7 +36,8 @@ list_of_dirnfiles = [
 
     # memory & database module (PostgresServer)
     f"{project_name}/memory/__init__.py",
-    f"{project_name}/memory/checkpointer.py",
+    f"{project_name}/memory/checkpointer.py", # short-term persistance memory
+    f"{project_name}/memory/store.py", # long-term persistance memory
 
     # config & prompts module
     f"{project_name}/config/__init__.py",

@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 load_dotenv()
 # Environment & SSL Certificate Setup (Windows SSL Fix)
 os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ["REQUEST_CA_BUNDLE"] = certifi.where()
+os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
 
 # Retrieves and formats the PostgreSQL database URL with SSL mode.
@@ -31,14 +31,17 @@ def get_databaseUrl() -> str:
     return database_url
 
 
-
-
-
-# persistance session/ working memory(persistance Short-term memory / Checkpointer)
-# saving in postgreserver - Resumability & Fault Tolerance.
+# Persistent Short-Term Memory & State Caching (Session Checkpointer)
 @log_execution
 def get_checkpointer() -> PostgresSaver:
-    # Initializes and sets up the PostgresSaver checkpointer for LangGraph memory.
+    """
+    Initializes and sets up the PostgresSaver checkpointer for LangGraph.
+    
+    Provides:
+      - Persistent thread-level short-term memory.
+      - Step-by-step intermediate state caching across multi-agent nodes.
+      - Error recovery and workflow resumption without duplicate API calls.
+    """
     database_url = get_databaseUrl()
 
     parsed = urlparse(database_url)
@@ -56,3 +59,20 @@ def get_checkpointer() -> PostgresSaver:
 
     return checkpointer
 
+
+
+
+# In LangGraph, PostgresSaver acts as both Short-Term Memory and a Durable State Cache:
+#
+# 1. Thread-Level Short-Term Memory:
+#    - Saves entire conversation history ('messages') and state ('TravelState') per 'thread_id'.
+#    - Preserves context across multi-turn user conversations.
+#
+# 2. State & Intermediate Results Caching (Key Use Cases):
+#    - Case A (Intermediate Outputs Cache): When an agent finishes (e.g. flight_agent, hotel_agent),
+#      its output is cached in PostgreSQL state. Next agents read this cache without re-fetching APIs.
+#    - Case B (Fault Recovery & Resumption): If a downstream agent fails (e.g. weather API error),
+#      the workflow resumes from the last saved checkpoint instead of re-running earlier agents.
+#      This saves significant LLM tokens and external API credits.
+#    - Case C (Durable Session Cache): Because checkpoints live in PostgreSQL, cached sessions
+#      survive server restarts and crashes.

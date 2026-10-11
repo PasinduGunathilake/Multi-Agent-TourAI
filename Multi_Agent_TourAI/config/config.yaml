@@ -1,7 +1,7 @@
 # Main Configuration & Domain Mappings for Multi-Agent-TourAI
-# MLOps Best Practice: Separation of domain configs and lookup tables from code logic
+# Best Practice: Separation of domain configs and lookup tables from code logic
 
-# Airport and Country Mappings for Flight Agent
+# Airport and Country Mappings for Flight Agent Tool in tools/flight_tool - when using local mcp this not required
 country_aliases:
   # North America
   "usa": "US"

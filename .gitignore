@@ -5,7 +5,5 @@ tourvenv/
 *.pyc
 logs/
 
-.agents
-frontend/
 
 additional_code/

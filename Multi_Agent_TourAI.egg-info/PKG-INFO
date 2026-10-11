@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: Multi_Agent_TourAI
-Version: 0.0.0
-Summary: A Muti agent tour ai for effective tour planning using MCP, Guardrails, Long-term & Persisistance Memory and Human In Loop
+Version: 1.0.0
+Summary: A Muti agent tour ai for effective tour planning using MCP, Guardrails, Long-term / Short_term  Persisistance Memory and Human In the Loop
 Author: Pasindu Gunathilake
 Author-email: pasindugunathilake144@gmail.com
 License-File: LICENSE
@@ -21,6 +21,11 @@ Requires-Dist: pycountry==26.2.16
 Requires-Dist: fastapi==0.136.3
 Requires-Dist: uvicorn==0.48.0
 Requires-Dist: jinja2==3.1.6
+Requires-Dist: pyyaml==6.0.3
+Requires-Dist: langchain-mcp-adapters==0.3.0
+Requires-Dist: nest_asyncio==1.6.0
+Requires-Dist: mcp==1.28.1
+Requires-Dist: uv
 Dynamic: author
 Dynamic: author-email
 Dynamic: license-file

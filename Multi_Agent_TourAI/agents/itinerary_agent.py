@@ -14,6 +14,7 @@ def itinerary_agent(state: TravelState):
         user_query = state["user_query"],
         flight_results = state["flight_results"],
         hotel_results = state["hotel_results"],
+        weather_results = state["weather_results"]
     )
     response = llm.invoke([
         SystemMessage(content=ITINERARY_SYSTEM_PROMPT),

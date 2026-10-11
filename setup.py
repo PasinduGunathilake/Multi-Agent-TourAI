@@ -2,10 +2,10 @@ from setuptools import find_packages, setup
 
 setup(
     name = "Multi_Agent_TourAI",
-    version= "0.0.0",
+    version= "1.0.0",
     author = "Pasindu Gunathilake",
     author_email= "pasindugunathilake144@gmail.com",
-    description= "A Muti agent tour ai for effective tour planning using MCP, Guardrails, Long-term & Persisistance Memory and Human In Loop",
+    description= "A Muti agent tour ai for effective tour planning using MCP, Guardrails, Long-term / Short_term  Persisistance Memory and Human In the Loop",
     packages=find_packages(),
     install_requires=[
         "langgraph==1.2.2",
@@ -24,6 +24,11 @@ setup(
         "fastapi==0.136.3",
         "uvicorn==0.48.0",
         "jinja2==3.1.6",
+        "pyyaml==6.0.3",
+        "langchain-mcp-adapters==0.3.0",
+        "nest_asyncio==1.6.0",
+        "mcp==1.28.1",
+        "uv",
     ]
 )
 

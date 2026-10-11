@@ -1,3 +1,4 @@
+# custom defined tavily_search funtion code base - if use remote mcp, this not required 
 # fetch hotel details
 import os
 from tavily import TavilyClient

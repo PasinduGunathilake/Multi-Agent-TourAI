@@ -3,7 +3,7 @@ import asyncio
 from langchain_core.messages import AIMessage
 from Multi_Agent_TourAI.graph.state import TravelState
 from Multi_Agent_TourAI.mcp.weather_mcp import weather_mcp_search, forecast_mcp_search
-from Multi_Agent_TourAI.llms.llm import llm
+from Multi_Agent_TourAI.llms.llm import fast_llm
 from Multi_Agent_TourAI.config.prompts import (DESTINATION_EXTRACTOR_PROMPT_TEMPLATE,)
 from Multi_Agent_TourAI.utils import get_logger, log_execution
 
@@ -20,7 +20,7 @@ def extract_destination(query: str) -> str:
         query = query
     )
 
-    response = llm.invoke(prompt)
+    response = fast_llm.invoke(prompt) #for fast extraction
 
     return response.content.strip(" .\n\"'")
     

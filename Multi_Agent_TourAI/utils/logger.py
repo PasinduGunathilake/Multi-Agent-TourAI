@@ -6,6 +6,10 @@ from pathlib import Path
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
+# Hide httpx request URLs from printing API keys to terminal
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 # 1. Paths setup
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 LOG_DIR = PROJECT_ROOT / "logs"

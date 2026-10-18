@@ -1,6 +1,6 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from Multi_Agent_TourAI.graph.state import TravelState
-from Multi_Agent_TourAI.llms.llm import llm
+from Multi_Agent_TourAI.llms.llm import smart_llm
 from Multi_Agent_TourAI.config.prompts import (ITINERARY_SYSTEM_PROMPT, ITINERARY_PROMPT_TEMPLATE,)
 from Multi_Agent_TourAI.utils import get_logger, log_execution
 
@@ -16,7 +16,7 @@ def itinerary_agent(state: TravelState):
         hotel_results = state["hotel_results"],
         weather_results = state["weather_results"]
     )
-    response = llm.invoke([
+    response = smart_llm.invoke([
         SystemMessage(content=ITINERARY_SYSTEM_PROMPT),
         HumanMessage(content=prompt)
     ])

@@ -1,5 +1,10 @@
+import sys
 from Multi_Agent_TourAI.graph.workflow import run_travel_agent, travel_graph
 from Multi_Agent_TourAI.utils import logger
+
+# Windows console UTF-8 fix for emojis and special characters
+if sys.platform.startswith("win"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 __all__ = ["run_travel_agent", "travel_graph"]
 

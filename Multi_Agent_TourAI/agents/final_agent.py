@@ -1,6 +1,6 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from Multi_Agent_TourAI.graph.state import TravelState
-from Multi_Agent_TourAI.llms.llm import llm
+from Multi_Agent_TourAI.llms.llm import smart_llm
 from Multi_Agent_TourAI.config.prompts import (
     FINAL_RESPONSE_SYSTEM_PROMPT,
     FINAL_RESPONSE_PROMPT_TEMPLATE,
@@ -30,7 +30,7 @@ def final_response_agent(state: TravelState):
     )
 
     # Ask the LLM to write the final polished response
-    response = llm.invoke([
+    response = smart_llm.invoke([
         SystemMessage(content=FINAL_RESPONSE_SYSTEM_PROMPT),
         HumanMessage(content=prompt),
     ])

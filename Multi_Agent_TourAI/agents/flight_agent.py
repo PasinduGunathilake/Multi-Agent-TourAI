@@ -4,7 +4,7 @@ from langchain_core.messages import AIMessage
 from Multi_Agent_TourAI.graph.state import TravelState
 #from Multi_Agent_TourAI.tools.flight_tool import flight_search # uncomment when using custom implement search tool via aviationstack_api
 from Multi_Agent_TourAI.mcp.aviationstack_mcp import aviationstack_mcp_search
-from Multi_Agent_TourAI.llms.llm import llm
+from Multi_Agent_TourAI.llms.llm import fast_llm
 from Multi_Agent_TourAI.config.prompts import (FLIGHT_SYSTEM_PROMPT,FLIGHT_PROMPT_TEMPLATE,)
 from Multi_Agent_TourAI.utils import get_logger, log_execution
 
@@ -62,7 +62,7 @@ def flight_agent(state: TravelState):
             list_taxes=str(taxes)[:3000],
         )
 
-        response = llm.invoke([
+        response = fast_llm.invoke([
             SystemMessage(content=FLIGHT_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
         ])

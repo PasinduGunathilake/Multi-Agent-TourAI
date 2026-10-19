@@ -45,14 +45,14 @@ class TravelResponse(BaseModel):
 # API endpoints
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "services":"Multi_Agent_TourAI"}
+    return {"status": "healthy", "services": "Multi_Agent_TourAI"}
 
 @app.post("/api/plan", response_model=TravelResponse)
-async def plan(payload:TravelRequest):
+async def plan(payload: TravelRequest):
     user_query = payload.query.strip()
 
     if not user_query:
-        raise HTTPException(status_code=400, detail= "Query can not be empty.")
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
     logger.info(f"Incoming Travel Request: '{user_query}' | Thread: {payload.thread_id}")
 
     try:
@@ -63,6 +63,103 @@ async def plan(payload:TravelRequest):
     except Exception as e:
         logger.error(f"Error executing Multi-Agent workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+# Real-time Server-Sent Events (SSE) Streaming Endpoint
+import json
+import uuid
+import asyncio
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import HumanMessage
+from Multi_Agent_TourAI.graph.workflow import travel_graph
+
+@app.post("/api/plan/stream")
+async def plan_stream(payload: TravelRequest):
+    user_query = payload.query.strip()
+    if not user_query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+
+    thread_id = payload.thread_id or f"user_{uuid.uuid4().hex}"
+    user_id = "default_user"
+    logger.info(f"Incoming Real-time Streaming Request: '{user_query}' | Thread: {thread_id}")
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "user_id": user_id,
+        }
+    }
+
+    initial_state = {
+        "messages": [HumanMessage(content=user_query)],
+        "user_query": user_query,
+        "flight_results": "",
+        "hotel_results": "",
+        "weather_results": "",
+        "itinerary": "",
+        "llm_calls": 0,
+    }
+
+    async def event_generator():
+        accumulated_state = dict(initial_state)
+
+        # 1. Yield initial Fan-Out trigger event
+        yield f"data: {json.dumps({'event': 'fan_out_start', 'message': 'Dispatched parallel Flight, Hotel & Weather MCP agents'})}\n\n"
+        await asyncio.sleep(0.01)
+
+        try:
+            # Stream updates from the LangGraph execution graph
+            for update in travel_graph.stream(initial_state, config=config, stream_mode="updates"):
+                for node_name, node_output in update.items():
+                    accumulated_state.update(node_output)
+
+                    # Extract node payload
+                    node_payload = {
+                        "event": "node_complete",
+                        "node": node_name,
+                        "flight_results": accumulated_state.get("flight_results", ""),
+                        "hotel_results": accumulated_state.get("hotel_results", ""),
+                        "weather_results": accumulated_state.get("weather_results", ""),
+                        "itinerary": accumulated_state.get("itinerary", ""),
+                        "llm_calls": accumulated_state.get("llm_calls", 0),
+                    }
+
+                    if node_name == "final_agent":
+                        messages = node_output.get("messages", [])
+                        if messages:
+                            node_payload["answer"] = messages[-1].content
+
+                    yield f"data: {json.dumps(node_payload)}\n\n"
+                    await asyncio.sleep(0.02)
+
+            # Final complete event
+            messages = accumulated_state.get("messages", [])
+            final_answer = messages[-1].content if messages else ""
+
+            complete_payload = {
+                "event": "complete",
+                "thread_id": thread_id,
+                "answer": final_answer,
+                "flight_results": accumulated_state.get("flight_results", ""),
+                "hotel_results": accumulated_state.get("hotel_results", ""),
+                "weather_results": accumulated_state.get("weather_results", ""),
+                "itinerary": accumulated_state.get("itinerary", ""),
+                "llm_calls": accumulated_state.get("llm_calls", 0),
+            }
+            yield f"data: {json.dumps(complete_payload)}\n\n"
+
+        except Exception as e:
+            logger.error(f"Error in streaming Multi-Agent workflow: {str(e)}", exc_info=True)
+            yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 

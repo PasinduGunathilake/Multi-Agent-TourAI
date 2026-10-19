@@ -97,8 +97,8 @@ export default function HomePage() {
     });
 
     try {
-      // 1. Send Request to FastAPI Backend (app.py)
-      const apiPromise = fetch("http://127.0.0.1:8000/api/plan", {
+      // 1. Send Request to FastAPI Real-time Streaming Endpoint (SSE)
+      const res = await fetch("http://127.0.0.1:8000/api/plan/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -107,82 +107,111 @@ export default function HomePage() {
         }),
       });
 
-      // Fan-Out visual staging (~1.2s delay for smooth multi-agent presentation)
-      await new Promise((r) => setTimeout(r, 1200));
+      if (!res.ok || !res.body) {
+        throw new Error(`Streaming failed with status: ${res.status}`);
+      }
 
-      // ── STAGE 2: Fan-In Convergence to Itinerary Agent ──
-      setAgentStatus((prev) => ({
-        ...prev,
-        step: 2,
-        flightAgent: "done",
-        hotelAgent: "done",
-        weatherAgent: "done",
-        itineraryAgent: "running",
-        finalAgent: "idle",
-        currentAgent: "Fan-In: Itinerary Agent (Groq 120B Smart LLM)",
-        elapsedMs: Date.now() - startTime,
-      }));
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
 
-      // Await API Response from LangGraph backend
-      const res = await apiPromise;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-      // ── STAGE 3: Final Response Packaging ──
-      setAgentStatus((prev) => ({
-        ...prev,
-        step: 3,
-        itineraryAgent: "done",
-        finalAgent: "running",
-        currentAgent: "Final Agent: Synthesizing Travel Dossier Package...",
-        elapsedMs: Date.now() - startTime,
-      }));
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
 
-      if (res && res.ok) {
-        const data = await res.json();
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("data: ")) {
+            const jsonStr = trimmed.slice(6);
+            try {
+              const eventData = JSON.parse(jsonStr);
 
-        // Bind backend output to UI state
-        setPlanResult(data.answer);
-        if (data.flight_results) setFlightData(data.flight_results);
-        if (data.hotel_results) setHotelData(data.hotel_results);
-        if (data.weather_results) setWeatherData(data.weather_results);
-        if (data.itinerary) setItineraryData(data.itinerary);
-        if (data.llm_calls) setLlmCalls(data.llm_calls);
+              // ── EVENT: Fan-Out Start ──
+              if (eventData.event === "fan_out_start") {
+                setAgentStatus((prev) => ({
+                  ...prev,
+                  step: 1,
+                  flightAgent: "running",
+                  hotelAgent: "running",
+                  weatherAgent: "running",
+                  currentAgent: "Fan-Out Active: 3 Parallel MCP Threads running...",
+                  elapsedMs: Date.now() - startTime,
+                }));
+              }
 
-        setAgentStatus({
-          step: 4,
-          flightAgent: "done",
-          hotelAgent: "done",
-          weatherAgent: "done",
-          itineraryAgent: "done",
-          finalAgent: "done",
-          currentAgent: "Completed successfully via Multi-Agent Swarm",
-          elapsedMs: Date.now() - startTime,
-        });
-      } else {
-        const errData = await res?.json().catch(() => null);
-        console.warn("Backend response status:", res?.status, errData);
+              // ── EVENT: Individual Agent Node Complete (Live Streaming!) ──
+              else if (eventData.event === "node_complete") {
+                if (eventData.node === "flight_agent") {
+                  setAgentStatus((prev) => ({
+                    ...prev,
+                    flightAgent: "done",
+                    elapsedMs: Date.now() - startTime,
+                  }));
+                  if (eventData.flight_results) setFlightData(eventData.flight_results);
+                } else if (eventData.node === "hotel_agent") {
+                  setAgentStatus((prev) => ({
+                    ...prev,
+                    hotelAgent: "done",
+                    elapsedMs: Date.now() - startTime,
+                  }));
+                  if (eventData.hotel_results) setHotelData(eventData.hotel_results);
+                } else if (eventData.node === "weather_agent") {
+                  setAgentStatus((prev) => ({
+                    ...prev,
+                    weatherAgent: "done",
+                    elapsedMs: Date.now() - startTime,
+                  }));
+                  if (eventData.weather_results) setWeatherData(eventData.weather_results);
+                } else if (eventData.node === "itinerary_agent") {
+                  setAgentStatus((prev) => ({
+                    ...prev,
+                    step: 2,
+                    itineraryAgent: "done",
+                    finalAgent: "running",
+                    currentAgent: "Fan-In: Itinerary Agent completed · Final Agent synthesizing...",
+                    elapsedMs: Date.now() - startTime,
+                  }));
+                  if (eventData.itinerary) setItineraryData(eventData.itinerary);
+                } else if (eventData.node === "final_agent") {
+                  setAgentStatus((prev) => ({
+                    ...prev,
+                    step: 3,
+                    finalAgent: "done",
+                    elapsedMs: Date.now() - startTime,
+                  }));
+                  if (eventData.answer) setPlanResult(eventData.answer);
+                }
+              }
 
-        // Resilient Fallback Dossier
-        setPlanResult(
-          `[TourAI Fan-Out / Fan-In Multi-Agent Swarm Orchestration]\n\n` +
-          `Destination: ${searchQuery}\n` +
-          `• AviationStack Flight Agent: Live routes, airline options, and pricing retrieved via MCP.\n` +
-          `• Tavily Hotel Agent: Curated boutique stays and guest ratings retrieved via Remote MCP.\n` +
-          `• OpenWeatherMap Weather Agent: Destination current climate & 5-day weather outlook retrieved via FastMCP.\n` +
-          `• Itinerary Agent (Groq 120B Flagship Reasoning): Coherent day-by-day morning/afternoon/evening schedule synchronized.\n` +
-          `• Final Response Agent: Polished travel dossier synthesized with zero-downtime Gemini Flash fallback.\n` +
-          `• Dual-Memory: Thread checkpoint committed to PostgresSaver with long-term traveler store persistence.`
-        );
+              // ── EVENT: Complete Workflow Finish ──
+              else if (eventData.event === "complete") {
+                if (eventData.answer) setPlanResult(eventData.answer);
+                if (eventData.flight_results) setFlightData(eventData.flight_results);
+                if (eventData.hotel_results) setHotelData(eventData.hotel_results);
+                if (eventData.weather_results) setWeatherData(eventData.weather_results);
+                if (eventData.itinerary) setItineraryData(eventData.itinerary);
+                if (eventData.llm_calls) setLlmCalls(eventData.llm_calls);
 
-        setAgentStatus({
-          step: 4,
-          flightAgent: "done",
-          hotelAgent: "done",
-          weatherAgent: "done",
-          itineraryAgent: "done",
-          finalAgent: "done",
-          currentAgent: "Completed (Simulated Swarm Fallback)",
-          elapsedMs: Date.now() - startTime,
-        });
+                setAgentStatus({
+                  step: 4,
+                  flightAgent: "done",
+                  hotelAgent: "done",
+                  weatherAgent: "done",
+                  itineraryAgent: "done",
+                  finalAgent: "done",
+                  currentAgent: "Completed successfully via Multi-Agent Real-time Stream",
+                  elapsedMs: Date.now() - startTime,
+                });
+              }
+            } catch (err) {
+              console.warn("SSE Chunk parse warning:", err);
+            }
+          }
+        }
       }
     } catch (err) {
       console.error("Backend Connection Error:", err);

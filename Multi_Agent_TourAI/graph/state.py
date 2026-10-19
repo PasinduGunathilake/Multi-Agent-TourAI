@@ -29,5 +29,11 @@ class TravelState(TypedDict):
     # Counter for total LLM calls across the workflow
     llm_calls: Annotated[int, operator.add]  # values are summed up automatically using operator.add
 
+    # Flag indicating whether the user request passed input guardrail validation
+    guardrail_allowed: bool
+
+    # Rejection explanation or safety refusal message if the request was blocked
+    guardrail_reason: str
+
 
 __all__ = ["TravelState"]

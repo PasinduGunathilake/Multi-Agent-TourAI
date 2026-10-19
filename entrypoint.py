@@ -9,7 +9,7 @@ if sys.platform.startswith("win"):
 __all__ = ["run_travel_agent", "travel_graph"]
 
 if __name__ == "__main__":
-    test_query = "Plan a 5 days trip to Dubai from Sri Lanka"
+    test_query = input("Enter the test query: ")
     logger.info(f"====> Starting Travel Agent Test with query: '{test_query}'")
     response = run_travel_agent(test_query)
     print("=" * 80)

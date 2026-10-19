@@ -9,7 +9,7 @@ logger = get_logger(__name__)
 @log_execution
 def itinerary_agent(state: TravelState):
 
-    logger.info("Generating tour plan using Groq LLM...")
+    logger.info("Generating tour plan using LLM...")
     prompt = ITINERARY_PROMPT_TEMPLATE.format(
         user_query = state["user_query"],
         flight_results = state["flight_results"],

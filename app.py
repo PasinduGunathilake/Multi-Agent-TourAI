@@ -14,7 +14,7 @@ logger = get_logger("Multi_Agent_TourAI.api")
 app = FastAPI(
     title = "Multi_Agent_TourAI API",
     description= "Backend API for LangGraph Travel Planner",
-    version="0.0.0",
+    version="3.0.0",
 )
 
 # CORS Middleware

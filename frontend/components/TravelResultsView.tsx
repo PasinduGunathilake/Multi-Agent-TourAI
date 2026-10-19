@@ -6,6 +6,7 @@ interface TravelResultsViewProps {
   planResult: string;
   flightData?: string;
   hotelData?: string;
+  weatherData?: string;
   itineraryData?: string;
   llmCalls?: number;
 }
@@ -43,7 +44,7 @@ export default function TravelResultsView({
     },
   ];
 
-  // Sample Mock Structured Hotel Data
+  // Sample Mock Structured Hotel Data // 
   const sampleHotels = [
     {
       name: "The Grand Heritage Boutique",
@@ -63,7 +64,7 @@ export default function TravelResultsView({
     },
   ];
 
-  // Sample Mock Structured Weather Data (OpenWeatherMap FastMCP)
+  // Sample Mock Structured Weather Data (OpenWeatherMap FastMCP) //
   const sampleWeather = {
     current: {
       temp: "25°C",
@@ -82,7 +83,7 @@ export default function TravelResultsView({
     ],
   };
 
-  // Sample Mock Day-by-Day Itinerary Data
+  // Sample Mock Day-by-Day Itinerary Data //
   const sampleDays = [
     {
       day: "Day 1",

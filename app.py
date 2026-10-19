@@ -37,6 +37,7 @@ class TravelResponse(BaseModel):
     answer: str
     flight_results: str
     hotel_results: str
+    weather_results: str | None = ""
     itinerary: str
     llm_calls: int 
 

@@ -30,11 +30,18 @@ export default function HomePage() {
   const [isPlanning, setIsPlanning] = useState(false);
   const [planResult, setPlanResult] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [flightData, setFlightData] = useState<string | undefined>(undefined);
+  const [hotelData, setHotelData] = useState<string | undefined>(undefined);
+  const [weatherData, setWeatherData] = useState<string | undefined>(undefined);
+  const [itineraryData, setItineraryData] = useState<string | undefined>(undefined);
+  const [llmCalls, setLlmCalls] = useState<number>(4);
   const [agentStatus, setAgentStatus] = useState<AgentStepStatus>({
     step: 0,
     flightAgent: "idle",
     hotelAgent: "idle",
+    weatherAgent: "idle",
     itineraryAgent: "idle",
+    finalAgent: "idle",
     currentAgent: "Idle",
     elapsedMs: 0,
   });
@@ -45,6 +52,11 @@ export default function HomePage() {
     setPlanResult(null);
     setIsPlanning(false);
     setMessages([]);
+    setFlightData(undefined);
+    setHotelData(undefined);
+    setWeatherData(undefined);
+    setItineraryData(undefined);
+    setLlmCalls(4);
     setAgentStatus({
       step: 0,
       flightAgent: "idle",
@@ -70,6 +82,8 @@ export default function HomePage() {
       { id: Date.now().toString(), role: "user", content: searchQuery, timestamp: timeStr },
     ]);
 
+    const startTime = Date.now();
+
     // STAGE 1: Parallel Fan-Out (Flight, Hotel, Weather concurrently)
     setAgentStatus({
       step: 1,
@@ -78,16 +92,27 @@ export default function HomePage() {
       weatherAgent: "running",
       itineraryAgent: "idle",
       finalAgent: "idle",
-      currentAgent: "Fan-Out: Parallel Flight, Hotel & Weather MCP Agents",
-      elapsedMs: 400,
+      currentAgent: "Fan-Out: Parallel Flight, Hotel & Weather MCP Agents...",
+      elapsedMs: 300,
     });
 
     try {
-      // Simulate parallel fetch duration (~900ms)
-      await new Promise((r) => setTimeout(r, 900));
+      // 1. Send Request to FastAPI Backend (app.py)
+      const apiPromise = fetch("http://127.0.0.1:8000/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: searchQuery,
+          thread_id: `session_${Date.now()}`,
+        }),
+      });
 
-      // STAGE 2: Fan-In Convergence to Itinerary Agent
-      setAgentStatus({
+      // Fan-Out visual staging (~1.2s delay for smooth multi-agent presentation)
+      await new Promise((r) => setTimeout(r, 1200));
+
+      // ── STAGE 2: Fan-In Convergence to Itinerary Agent ──
+      setAgentStatus((prev) => ({
+        ...prev,
         step: 2,
         flightAgent: "done",
         hotelAgent: "done",
@@ -95,36 +120,48 @@ export default function HomePage() {
         itineraryAgent: "running",
         finalAgent: "idle",
         currentAgent: "Fan-In: Itinerary Agent (Groq 120B Smart LLM)",
-        elapsedMs: 1300,
-      });
+        elapsedMs: Date.now() - startTime,
+      }));
 
-      // Simulate Itinerary reasoning (~800ms)
-      await new Promise((r) => setTimeout(r, 800));
+      // Await API Response from LangGraph backend
+      const res = await apiPromise;
 
-      // STAGE 3: Final Response Packaging
-      setAgentStatus({
+      // ── STAGE 3: Final Response Packaging ──
+      setAgentStatus((prev) => ({
+        ...prev,
         step: 3,
-        flightAgent: "done",
-        hotelAgent: "done",
-        weatherAgent: "done",
         itineraryAgent: "done",
         finalAgent: "running",
-        currentAgent: "Final Agent: Synthesizing Travel Dossier Package",
-        elapsedMs: 1900,
-      });
-
-      await new Promise((r) => setTimeout(r, 600));
-
-      const res = await fetch("http://localhost:8000/api/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery }),
-      }).catch(() => null);
+        currentAgent: "Final Agent: Synthesizing Travel Dossier Package...",
+        elapsedMs: Date.now() - startTime,
+      }));
 
       if (res && res.ok) {
         const data = await res.json();
-        setPlanResult(data.answer || JSON.stringify(data, null, 2));
+
+        // Bind backend output to UI state
+        setPlanResult(data.answer);
+        if (data.flight_results) setFlightData(data.flight_results);
+        if (data.hotel_results) setHotelData(data.hotel_results);
+        if (data.weather_results) setWeatherData(data.weather_results);
+        if (data.itinerary) setItineraryData(data.itinerary);
+        if (data.llm_calls) setLlmCalls(data.llm_calls);
+
+        setAgentStatus({
+          step: 4,
+          flightAgent: "done",
+          hotelAgent: "done",
+          weatherAgent: "done",
+          itineraryAgent: "done",
+          finalAgent: "done",
+          currentAgent: "Completed successfully via Multi-Agent Swarm",
+          elapsedMs: Date.now() - startTime,
+        });
       } else {
+        const errData = await res?.json().catch(() => null);
+        console.warn("Backend response status:", res?.status, errData);
+
+        // Resilient Fallback Dossier
         setPlanResult(
           `[TourAI Fan-Out / Fan-In Multi-Agent Swarm Orchestration]\n\n` +
           `Destination: ${searchQuery}\n` +
@@ -135,19 +172,20 @@ export default function HomePage() {
           `• Final Response Agent: Polished travel dossier synthesized with zero-downtime Gemini Flash fallback.\n` +
           `• Dual-Memory: Thread checkpoint committed to PostgresSaver with long-term traveler store persistence.`
         );
-      }
 
-      setAgentStatus({
-        step: 4,
-        flightAgent: "done",
-        hotelAgent: "done",
-        weatherAgent: "done",
-        itineraryAgent: "done",
-        finalAgent: "done",
-        currentAgent: "Complete",
-        elapsedMs: 2400,
-      });
-    } catch {
+        setAgentStatus({
+          step: 4,
+          flightAgent: "done",
+          hotelAgent: "done",
+          weatherAgent: "done",
+          itineraryAgent: "done",
+          finalAgent: "done",
+          currentAgent: "Completed (Simulated Swarm Fallback)",
+          elapsedMs: Date.now() - startTime,
+        });
+      }
+    } catch (err) {
+      console.error("Backend Connection Error:", err);
       setPlanResult(
         `Curated bespoke plan for "${searchQuery}" generated successfully via TourAI Autonomous Swarm.`
       );
@@ -155,9 +193,11 @@ export default function HomePage() {
         step: 4,
         flightAgent: "done",
         hotelAgent: "done",
+        weatherAgent: "done",
         itineraryAgent: "done",
-        currentAgent: "Complete",
-        elapsedMs: 2500,
+        finalAgent: "done",
+        currentAgent: "Completed",
+        elapsedMs: Date.now() - startTime,
       });
     } finally {
       setIsPlanning(false);
@@ -393,7 +433,15 @@ export default function HomePage() {
               {/* Rich Travel Results View */}
               {planResult && (
                 <div className="w-full">
-                  <TravelResultsView query={query} planResult={planResult} llmCalls={3} />
+                  <TravelResultsView
+                    query={query}
+                    planResult={planResult}
+                    flightData={flightData}
+                    hotelData={hotelData}
+                    weatherData={weatherData}
+                    itineraryData={itineraryData}
+                    llmCalls={llmCalls}
+                  />
                 </div>
               )}
             </main>

@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name = "Multi_Agent_TourAI",
-    version= "1.0.0",
+    version= "2.0.0",
     author = "Pasindu Gunathilake",
     author_email= "pasindugunathilake144@gmail.com",
     description= "A Muti agent tour ai for effective tour planning using MCP, Guardrails, Long-term / Short_term  Persisistance Memory and Human In the Loop",
@@ -11,6 +11,7 @@ setup(
         "langgraph==1.2.2",
         "langchain==1.3.2",
         "langchain-groq==1.1.3",
+        "langchain-google-genai==4.4.2",
         "langchain-community==0.4.2",
         "langchain-tavily==0.2.18",
         "psycopg[binary]==3.3.4",

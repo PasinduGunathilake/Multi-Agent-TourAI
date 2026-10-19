@@ -54,7 +54,7 @@ and zero downtime.
 groq_smart = ChatGroq(
     model="openai/gpt-oss-120b",
     api_key=GROQ_API_KEY,
-    max_tokens=1500
+    max_tokens=3500
 )
 logger.info(f"Groq LLM initialized with model: '{groq_smart.model_name}'")
 
@@ -72,7 +72,7 @@ if GEMINI_API_KEY:
         gemini = ChatGoogleGenerativeAI(
             model="gemini-3.5-flash-lite",
             google_api_key=GEMINI_API_KEY,
-            max_output_tokens=1500,
+            max_output_tokens=3500,
             temperature=0.3
         )
         logger.info("Gemini fallback model activated.")

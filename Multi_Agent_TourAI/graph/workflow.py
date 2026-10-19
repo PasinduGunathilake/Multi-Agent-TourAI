@@ -9,6 +9,7 @@ from Multi_Agent_TourAI.agents.weather_agent import weather_agent
 from Multi_Agent_TourAI.agents.final_agent import final_response_agent
 from Multi_Agent_TourAI.memory.checkpointer import get_checkpointer
 from Multi_Agent_TourAI.memory.store import get_store
+from Multi_Agent_TourAI.guardrails.inputguardrail import input_guardrail, guardrail_blocked
 from Multi_Agent_TourAI.utils import get_logger, log_execution
 
 # Initialize logger
@@ -19,6 +20,9 @@ logger = get_logger(__name__)
 # Define the graph with our shared state schema (TravelState)
 graph = StateGraph(TravelState)
 
+# Add Guardrail nodes to the graph
+graph.add_node("input_guardrail", input_guardrail)
+graph.add_node("guardrail_blocked", guardrail_blocked)
 # Add all 5 agent nodes to the graph
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
@@ -47,11 +51,14 @@ graph.add_edge("final_agent", END)
 
 #### Method 2: The Parallel / Asynchronous multi-agent execution pipeline: faster execution (~x3 times speed than 1st methode)
 '''
-                  +---> Flight Agent  ---+
-                  |                      |
-START  ---------> +---> Hotel Agent   ---+---------> Itinerary Agent ------> Final Agent ------> END
-                  |                      |
-                  +---> Weather Agent ---+
+                                                         -- flight_agent --+
+                                                        |                  |
+START -> input_guardrail  +---- [allowed == True] +----- -- hotel_agent ---+ ----> itinerary_agent -> final_agent -> END
+                    |                                   |                  |
+                    |                                    -- weather_agent -+
+                    |                                   
+                    +-------- [allowed == False] -------> guardrail_blocked ---------------------------> END
+
 
 
 WHY WE CAN USE THIS PARALLEL APPROACH:
@@ -68,17 +75,45 @@ WHY WE CAN USE THIS PARALLEL APPROACH:
    - Hence, Itinerary Agent waits until all 3 parallel agents finish before executing.
 
 '''
-# Start independent agents simultaneously (flight, hotel, weather)
-graph.add_edge(START, "flight_agent")
-graph.add_edge(START, "hotel_agent")
-graph.add_edge(START, "weather_agent")
-# wait for all 3 to finish, then pass their combined data to itineraray agent
+# 2. Graph Edges & Routing Logic
+
+# Route from START to the Input Guardrail
+graph.add_edge(START, "input_guardrail")
+
+
+# Conditional Router: Directs traffic based on Guardrail validation
+def route_after_guardrail(state: TravelState):
+    """
+    Evaluates whether the user request is allowed by the input guardrail.
+    - If allowed: triggers the 3 parallel agents (flight, hotel, weather).
+    - If blocked: routes directly to the guardrail_blocked terminal node.
+    """
+    if state.get("guardrail_allowed", True):
+        # Query is travel-related -> Run parallel independent agents
+        return ["flight_agent", "hotel_agent", "weather_agent"]
+    else:
+        # Off-topic or harmful query -> Route to blocked exit node
+        return ["guardrail_blocked"]
+
+
+# Add conditional edges from the guardrail inspection
+graph.add_conditional_edges(
+    "input_guardrail",
+    route_after_guardrail,
+    ["flight_agent", "hotel_agent", "weather_agent", "guardrail_blocked"],
+)
+
+# Parallel synchronization: Wait for all 3 agents to finish, then pass data to Itinerary Agent
 graph.add_edge("flight_agent", "itinerary_agent")
 graph.add_edge("hotel_agent", "itinerary_agent")
 graph.add_edge("weather_agent", "itinerary_agent")
-# Finish: itinerary -> final -> eND
+
+# Sequential flow: Itinerary Agent -> Final Response Agent -> END
 graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", END)
+
+# Early exit: Blocked requests terminate immediately without executing external APIs or LLMs
+graph.add_edge("guardrail_blocked", END)
 
 
 
@@ -135,6 +170,8 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
             "weather_results": "",
             "itinerary": "",
             "llm_calls": 0,
+            "guardrail_allowed": True,
+            "guardrail_reason": "",
         },
         config=config,
     )
@@ -151,6 +188,8 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
         "weather_results": result.get("weather_results", ""),
         "itinerary": result.get("itinerary", ""),
         "llm_calls": result.get("llm_calls", 0),
+        "guardrail_allowed": result.get("guardrail_allowed", True),
+        "guardrail_reason": result.get("guardrail_reason", ""),
     }
 
 

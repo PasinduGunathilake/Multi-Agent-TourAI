@@ -60,7 +60,7 @@ def weather_agent(state: TravelState):
     return {
         "weather_results": weather_data,
         "messages": [AIMessage(content=f"Weather information fetched for {city}.")],
-        "llm_calls": state.get("llm_calls", 0) + 1,
+        "llm_calls": 1,
     }
 
 

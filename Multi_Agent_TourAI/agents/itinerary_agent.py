@@ -24,5 +24,5 @@ def itinerary_agent(state: TravelState):
     return {
         "itinerary": response.content,
         "messages": [response],
-        "llm_calls": state.get("llm_calls", 0)+1
+        "llm_calls": 1
     }

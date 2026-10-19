@@ -9,6 +9,10 @@ list_of_dirnfiles = [
     # LLM module
     f"{project_name}/llms/__init__.py",
     f"{project_name}/llms/llm.py",
+
+    # Guardrail module (Security/ Safety & Domain Validation)
+    f"{project_name}/guardrails/__init__.py",
+    f"{project_name}/guardrails/inputguardrail.py",
     
     # agents module
     f"{project_name}/agents/__init__.py",

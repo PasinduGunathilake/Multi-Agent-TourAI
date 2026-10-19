@@ -1,3 +1,22 @@
+# guardrail
+Guardrail_PROMPT_TEMPLATE = """
+Determine whether the following request to travel planning or travel information.
+Valid requests can include destinations, flights, hotels, weather, budgets, visas, transportation,
+food, packing, or itineraries.
+
+Block clearly unrelated requests asking from harmful or illegal instructions. Do not block a valid travel
+request merely because some details are missing.
+
+Return strict JSON only:
+{{
+    "allowed": true,
+    "reason": ""
+}}
+User Query:
+{user_query}
+"""
+
+
 # itinerary_agent
 ITINERARY_SYSTEM_PROMPT = "You are an expert travel agent"
 

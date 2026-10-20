@@ -181,10 +181,15 @@ export default function HomePage() {
                     ...prev,
                     step: 3,
                     finalAgent: "done",
+                    currentAgent: "Generating curated itinerary...",
                     elapsedMs: Date.now() - startTime,
                   }));
-                  if (eventData.answer) setPlanResult(eventData.answer);
                 }
+              }
+
+              // ── EVENT: Live Token-by-Token Typing Stream ──
+              else if (eventData.event === "token" && eventData.token) {
+                setPlanResult((prev) => prev + eventData.token);
               }
 
               // ── EVENT: Complete Workflow Finish ──
@@ -442,24 +447,29 @@ export default function HomePage() {
 
             {/* Main Chat Feed */}
             <main className="flex-1 w-full max-w-4xl mx-auto px-4 py-8 pb-36 flex flex-col gap-6">
-              {/* User Prompt Message Bubble (Right aligned) */}
-              <div className="flex justify-end">
-                <div className="max-w-xl p-4 rounded-2xl rounded-tr-sm bg-gradient-to-r from-teal-500/15 to-sky-500/15 border border-teal-500/30 text-white text-sm shadow-lg backdrop-blur-md">
-                  <div className="text-[11px] font-mono text-teal-300 mb-1 flex items-center gap-1">
-                    <span>You</span>
-                    <span>•</span>
-                    <span className="text-white/40">Traveler</span>
-                  </div>
-                  <div>{query}</div>
+              {/* User Prompt Message (Right aligned clean style) */}
+              <div className="flex justify-end items-center gap-3">
+                <div className="max-w-xl px-4 py-2.5 rounded-2xl bg-[#1c1c21] border border-white/10 text-neutral-100 text-[15px] shadow-sm">
+                  {query}
+                </div>
+                <div className="w-8 h-8 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-xs font-semibold text-neutral-300 uppercase shrink-0">
+                  {query ? query.slice(0, 2).toLowerCase() : "me"}
                 </div>
               </div>
 
-              {/* Agent Orchestration Visualizer */}
-              <div className="w-full">
-                <AgentWorkflowVisualizer status={agentStatus} userQuery={query} />
-              </div>
+              {/* Minimalist Live Agent Status Indicator (ChatGPT / Claude style) */}
+              {isPlanning && !planResult && (
+                <div className="flex items-center gap-3 text-neutral-400 text-sm py-4">
+                  <div className="w-6 h-6 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-teal-400 shrink-0">
+                    <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                  </div>
+                  <span className="text-neutral-300 animate-pulse text-sm">
+                    {agentStatus.currentAgent || "Researching flight routes, hotels & weather..."}
+                  </span>
+                </div>
+              )}
 
-              {/* Rich Travel Results View */}
+              {/* Clean Travel Results View */}
               {planResult && (
                 <div className="w-full">
                   <TravelResultsView
@@ -470,6 +480,7 @@ export default function HomePage() {
                     weatherData={weatherData}
                     itineraryData={itineraryData}
                     llmCalls={llmCalls}
+                    isStreaming={isPlanning}
                   />
                 </div>
               )}

@@ -35,5 +35,15 @@ class TravelState(TypedDict):
     # Rejection explanation or safety refusal message if the request was blocked
     guardrail_reason: str
 
+    ### Supervisor Agent States (1.intent, 2.select agents, 3.reasoning) ###
+    # 1. Intent category determined by Supervisor: "new_plan" or "follow_up"
+    intent: str
+
+    # 2. List of specialist agent names selected by the supervisor
+    selected_agents: list[str]
+
+    # 3. Reasoning behind the supervisor's routing decision
+    supervisor_reasoning: str
+
 
 __all__ = ["TravelState"]

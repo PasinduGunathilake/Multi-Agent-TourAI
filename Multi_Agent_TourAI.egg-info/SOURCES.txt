@@ -12,6 +12,7 @@ Multi_Agent_TourAI/agents/final_agent.py
 Multi_Agent_TourAI/agents/flight_agent.py
 Multi_Agent_TourAI/agents/hotel_agent.py
 Multi_Agent_TourAI/agents/itinerary_agent.py
+Multi_Agent_TourAI/agents/supervisor_agent.py
 Multi_Agent_TourAI/agents/weather_agent.py
 Multi_Agent_TourAI/config/__init__.py
 Multi_Agent_TourAI/config/prompts.py

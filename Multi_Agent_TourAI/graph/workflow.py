@@ -10,6 +10,7 @@ from Multi_Agent_TourAI.agents.final_agent import final_response_agent
 from Multi_Agent_TourAI.memory.checkpointer import get_checkpointer
 from Multi_Agent_TourAI.memory.store import get_store
 from Multi_Agent_TourAI.guardrails.inputguardrail import input_guardrail, guardrail_blocked
+from Multi_Agent_TourAI.agents.supervisor_agent import supervisor_agent
 from Multi_Agent_TourAI.utils import get_logger, log_execution
 
 # Initialize logger
@@ -23,6 +24,8 @@ graph = StateGraph(TravelState)
 # Add Guardrail nodes to the graph
 graph.add_node("input_guardrail", input_guardrail)
 graph.add_node("guardrail_blocked", guardrail_blocked)
+# Add supervisor node to the graph
+graph.add_node("supervisor", supervisor_agent)
 # Add all 5 agent nodes to the graph
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
@@ -89,24 +92,77 @@ def route_after_guardrail(state: TravelState):
     - If blocked: routes directly to the guardrail_blocked terminal node.
     """
     if state.get("guardrail_allowed", True):
-        # Query is travel-related -> Run parallel independent agents
-        return ["flight_agent", "hotel_agent", "weather_agent"]
-    else:
-        # Off-topic or harmful query -> Route to blocked exit node
-        return ["guardrail_blocked"]
+        # Query is travel-related -> Run Supervisor agent
+        return "supervisor"
+    # Off-topic or harmful query -> Route to blocked exit node
+    return "guardrail_blocked"
 
 
 # Add conditional edges from the guardrail inspection
 graph.add_conditional_edges(
     "input_guardrail",
     route_after_guardrail,
-    ["flight_agent", "hotel_agent", "weather_agent", "guardrail_blocked"],
+    {
+        "supervisor":"supervisor",
+        "guardrail_blocked":"guardrail_blocked",
+    },
 )
 
-# Parallel synchronization: Wait for all 3 agents to finish, then pass data to Itinerary Agent
-graph.add_edge("flight_agent", "itinerary_agent")
-graph.add_edge("hotel_agent", "itinerary_agent")
-graph.add_edge("weather_agent", "itinerary_agent")
+# Supervisor Route: Distribute traffic
+def route_from_supervisor(state: TravelState):
+    intent = state.get("intent", "new_plan")
+    selected_agents = state.get("selected_agents", [])
+
+    # if query is Follow_up -> final agent (with memory)
+    if intent == "follow_up":
+        logger.info("Supervisor routed: Follow-up -> Direct to final_agent.")
+        return ["final_agent"]
+
+    # if query about specific Query (Weather only, Hotel only, Flight only, Itinerary only)
+    if intent == "specific_query" and selected_agents:
+        logger.info(f"Supervisor routed: Specific Query -> Running {selected_agents}")
+        return selected_agents
+
+    # if Travel plan -> parallel....
+    logger.info("Supervisor routed: Full Travel Plan -> Running parallel tool agents.")
+    return ["flight_agent", "hotel_agent", "weather_agent"]
+
+# Supervisor Possible Target Nodes
+graph.add_conditional_edges(
+    "supervisor",
+    route_from_supervisor,
+    ["flight_agent", "hotel_agent", "weather_agent", "itinerary_agent", "final_agent"],
+)
+
+# Route after specialist tool:
+def route_after_tool(state: TravelState):
+    """
+    Directs flow after a specialist tool agent executes:
+    - If user asked for a specific tool (specific_query) -> skip itinerary, go straight to final_agent.
+    - If user asked for a full travel plan (new_plan) -> proceed to itinerary_agent.
+    """
+    intent = state.get("intent", "new_plan")
+    if intent == "specific_query":
+        return "final_agent"
+    return "itinerary_agent"
+
+
+# Flight, Hotel, and Weather conditional edges
+graph.add_conditional_edges(
+    "flight_agent",
+    route_after_tool,
+    {"itinerary_agent": "itinerary_agent", "final_agent": "final_agent"},
+)
+graph.add_conditional_edges(
+    "hotel_agent",
+    route_after_tool,
+    {"itinerary_agent": "itinerary_agent", "final_agent": "final_agent"},
+)
+graph.add_conditional_edges(
+    "weather_agent",
+    route_after_tool,
+    {"itinerary_agent": "itinerary_agent", "final_agent": "final_agent"},
+)
 
 # Sequential flow: Itinerary Agent -> Final Response Agent -> END
 graph.add_edge("itinerary_agent", "final_agent")
@@ -114,10 +170,6 @@ graph.add_edge("final_agent", END)
 
 # Early exit: Blocked requests terminate immediately without executing external APIs or LLMs
 graph.add_edge("guardrail_blocked", END)
-
-
-
-
 
 
 # 3. Compile Graph with Checkpointer (Persistent Short-Term Memory) and Store (Persistance Long-Term Memory)
@@ -160,9 +212,17 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
         }
     }
 
-    # Invoke the graph with the initial state dictionary
-    result = travel_graph.invoke(
-        {
+    # Check if this thread has prior state in the Postgres checkpointer
+    checkpoint_state = travel_graph.get_state(config)
+    is_existing = bool(checkpoint_state and checkpoint_state.values)
+
+    if is_existing:
+        initial_input = {
+            "messages": [HumanMessage(content=user_input)],
+            "user_query": user_input,
+        }
+    else:
+        initial_input = {
             "messages": [HumanMessage(content=user_input)],
             "user_query": user_input,
             "flight_results": "",
@@ -172,9 +232,10 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
             "llm_calls": 0,
             "guardrail_allowed": True,
             "guardrail_reason": "",
-        },
-        config=config,
-    )
+        }
+
+    # Invoke the graph with the initial state dictionary
+    result = travel_graph.invoke(initial_input, config=config)
 
     final_result = result["messages"][-1].content
     logger.info(f"Workflow finished | Total LLM calls: {result.get('llm_calls', 0)}")

@@ -34,6 +34,7 @@ export default function HomePage() {
   const [hotelData, setHotelData] = useState<string | undefined>(undefined);
   const [weatherData, setWeatherData] = useState<string | undefined>(undefined);
   const [itineraryData, setItineraryData] = useState<string | undefined>(undefined);
+  const [sessionId, setSessionId] = useState<string>(() => `session_${Date.now()}`);
   const [llmCalls, setLlmCalls] = useState<number>(4);
   const [agentStatus, setAgentStatus] = useState<AgentStepStatus>({
     step: 0,
@@ -47,6 +48,7 @@ export default function HomePage() {
   });
 
   const resetToNewTrip = () => {
+    setSessionId(`session_${Date.now()}`);
     setHasStarted(false);
     setQuery("");
     setPlanResult(null);
@@ -103,7 +105,7 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: searchQuery,
-          thread_id: `session_${Date.now()}`,
+          tthread_id: sessionId,
         }),
       });
 

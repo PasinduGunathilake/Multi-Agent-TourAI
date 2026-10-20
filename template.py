@@ -21,6 +21,7 @@ list_of_dirnfiles = [
     f"{project_name}/agents/hotel_agent.py",
     f"{project_name}/agents/final_agent.py",
     f"{project_name}/agents/weather_agent.py",
+    f"{project_name}/agents/supervisor_agent.py",
 
     # graph module (state & workflow)
     f"{project_name}/graph/__init__.py",

@@ -126,10 +126,19 @@ async def plan_stream(payload: TravelRequest):
                     if node_name == "final_agent":
                         messages = node_output.get("messages", [])
                         if messages:
-                            node_payload["answer"] = messages[-1].content
-
-                    yield f"data: {json.dumps(node_payload)}\n\n"
-                    await asyncio.sleep(0.02)
+                            final_text = messages[-1].content
+                            # Notify node_complete without dumping full text at once
+                            yield f"data: {json.dumps({'event': 'node_complete', 'node': 'final_agent', 'llm_calls': accumulated_state.get('llm_calls', 0)})}\n\n"
+                            
+                            # Stream tokens word-by-word with realistic typewriter timing (~60 words/sec)
+                            import re
+                            tokens = re.findall(r'\S+|\s+', final_text)
+                            for token in tokens:
+                                yield f"data: {json.dumps({'event': 'token', 'token': token})}\n\n"
+                                await asyncio.sleep(0.015)
+                    else:
+                        yield f"data: {json.dumps(node_payload)}\n\n"
+                        await asyncio.sleep(0.02)
 
             # Final complete event
             messages = accumulated_state.get("messages", [])

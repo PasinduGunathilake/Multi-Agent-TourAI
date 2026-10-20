@@ -11,10 +11,10 @@ def itinerary_agent(state: TravelState):
 
     logger.info("Generating tour plan using LLM...")
     prompt = ITINERARY_PROMPT_TEMPLATE.format(
-        user_query = state["user_query"],
-        flight_results = state["flight_results"],
-        hotel_results = state["hotel_results"],
-        weather_results = state["weather_results"]
+        user_query = state.get("user_query", ""),
+        flight_results = state.get("flight_results", "Not requested."),
+        hotel_results = state.get("hotel_results", "Not requested."),
+        weather_results = state.get("weather_results", "Not requested.")
     )
     response = smart_llm.invoke([
         SystemMessage(content=ITINERARY_SYSTEM_PROMPT),

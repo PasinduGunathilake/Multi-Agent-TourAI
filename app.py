@@ -89,28 +89,45 @@ async def plan_stream(payload: TravelRequest):
         }
     }
 
-    initial_state = {
-        "messages": [HumanMessage(content=user_query)],
-        "user_query": user_query,
-        "flight_results": "",
-        "hotel_results": "",
-        "weather_results": "",
-        "itinerary": "",
-        "llm_calls": 0,
-    }
+    # Check if this thread has prior state in the Postgres checkpointer
+    checkpoint_state = travel_graph.get_state(config)
+    is_existing_session = bool(checkpoint_state and checkpoint_state.values)
+
+    if is_existing_session:
+        # Existing session: pass only the new user message so prior memory is preserved
+        initial_state = {
+            "messages": [HumanMessage(content=user_query)],
+            "user_query": user_query,
+        }
+    else:
+        # Brand new session: initialize empty defaults
+        initial_state = {
+            "messages": [HumanMessage(content=user_query)],
+            "user_query": user_query,
+            "flight_results": "",
+            "hotel_results": "",
+            "weather_results": "",
+            "itinerary": "",
+            "llm_calls": 0,
+        }
 
     async def event_generator():
-        accumulated_state = dict(initial_state)
-
-        # 1. Yield initial Fan-Out trigger event
-        yield f"data: {json.dumps({'event': 'fan_out_start', 'message': 'Dispatched parallel Flight, Hotel & Weather MCP agents'})}\n\n"
-        await asyncio.sleep(0.01)
+        if is_existing_session and checkpoint_state:
+            accumulated_state = dict(checkpoint_state.values)
+            accumulated_state.update(initial_state)
+        else:
+            accumulated_state = dict(initial_state)
 
         try:
             # Stream updates from the LangGraph execution graph
             for update in travel_graph.stream(initial_state, config=config, stream_mode="updates"):
                 for node_name, node_output in update.items():
                     accumulated_state.update(node_output)
+
+                    # Trigger UI fan_out indicator only when specialist tool agents are actually scheduled
+                    if node_name == "supervisor" and accumulated_state.get("intent") != "follow_up":
+                        yield f"data: {json.dumps({'event': 'fan_out_start', 'message': 'Dispatched specialist MCP agents'})}\n\n"
+                        await asyncio.sleep(0.01)
 
                     # Extract node payload
                     node_payload = {

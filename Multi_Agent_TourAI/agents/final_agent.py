@@ -42,11 +42,15 @@ def final_response_agent(state: TravelState):
             "Answer the traveler's question directly, clearly, and concisely using the above context."
         )
 
-        chat_history = state.get("messages", [])
+        # Keep only recent dialogue messages to prevent prompt bloat and Groq TPM limits
+        all_messages = state.get("messages", [])
+        recent_chat = all_messages[-3:] if len(all_messages) > 3 else all_messages
+        if recent_chat and recent_chat[-1].content == user_query:
+            recent_chat = recent_chat[:-1]
 
         messages_payload = [
             SystemMessage(content=system_instruction),
-            *chat_history,
+            *recent_chat,
             HumanMessage(content=user_query),
         ]
 

@@ -105,7 +105,7 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: searchQuery,
-          tthread_id: sessionId,
+          thread_id: sessionId,
         }),
       });
 

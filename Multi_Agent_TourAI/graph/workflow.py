@@ -39,9 +39,9 @@ graph.add_node("final_agent", final_response_agent)
 
 
 # 2. Define Execution Flow (Edges)
-'''
-#### Method 1: The sequential/ Synchronous multi-agent execution pipeline: slow execution
 
+#### Method 1: The sequential/ Synchronous multi-agent execution pipeline: slow execution
+'''
 # START ---------> Flight Agent ---------> Hotel Agent ---------> Weather Agent ---------> Itinerary Agent ---------> Final ---------> END
 
 graph.add_edge(START, "flight_agent")
@@ -52,31 +52,86 @@ graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", END) 
 '''
 
-#### Method 2: The Parallel / Asynchronous multi-agent execution pipeline: faster execution (~x3 times speed than 1st methode)
+#### Method 2: Dynamic Intent-Aware & Parallel Multi-Agent Pipeline (Current Production Architecture)
 '''
-                                                         -- flight_agent --+
-                                                        |                  |
-START -> input_guardrail  +---- [allowed == True] +----- -- hotel_agent ---+ ----> itinerary_agent -> final_agent -> END
-                    |                                   |                  |
-                    |                                    -- weather_agent -+
-                    |                                   
-                    +-------- [allowed == False] -------> guardrail_blocked ---------------------------> END
+                                  ┌───────┐
+                                  │ START │
+                                  └───┬───┘
+                                      │
+                                      ▼
+                            ┌───────────────────┐
+                            │  input_guardrail  │
+                            └─────────┬─────────┘
+                                      │
+              ┌───────────────────────┴───────────────────────┐
+              │ [allowed == False]                            │ [allowed == True]
+              ▼                                               ▼
+    ┌───────────────────┐                               ┌────────────┐
+    │ guardrail_blocked │                               │ supervisor │
+    └─────────┬─────────┘                               └─────┬──────┘
+              │                                               │
+              │         ┌─────────────────────────────────────┼──────────────────────────────────┐
+              │         │                                     │                                  │
+              │         │ (1. new_plan)                       │ (2. specific_query)              │ (3. follow_up)
+              │         ▼                                     ▼                                  │
+              │  ┌──────────────┐                       ┌──────────────┐                         │
+              │  │ Parallel Fan │                       │ Single Tool  │                         │
+              │  │  • flight    │                       │  • flight    │                         │
+              │  │  • hotel     │                       │  • hotel     │                         │
+              │  │  • weather   │                       │  • weather   │                         │
+              │  └──────┬───────┘                       └──────┬───────┘                         │
+              │         │                                      │                                 │
+              │         │ [new_plan]                           │ [specific_query]                │
+              │         ▼                                      │                                 │
+              │  ┌─────────────────┐                           │                                 │
+              │  │ itinerary_agent │ ◄── (Itinerary Only) ─────┤                                 │
+              │  └────────┬────────┘                           │                                 │
+              │           │                                    │                                 │
+              │           └──────────────────┐                 │                                 │
+              │                              ▼                 ▼                                 ▼
+              │                     ┌──────────────────────────────────────────────────────────────┐
+              │                     │                         final_agent                          │
+              │                     │ (Itinerary Format / Specific Summary / Conversational Chat)  │
+              │                     └──────────────────────────────┬───────────────────────────────┘
+              │                                                    │
+              └───────────────────────────────┬────────────────────┘
+                                              ▼
+                                           ┌─────┐
+                                           │ END │
+                                           └─────┘
 
 
+WHY WE USE THIS DYNAMIC PARALLEL & INTENT-AWARE PIPELINE:
 
-WHY WE CAN USE THIS PARALLEL APPROACH:
-
-1. Data Independence:
-   - Flight Agent, Hotel Agent, and Weather Agent are completely INDEPENDENT of each other.
+1. Data Independence & Parallel Latency Reduction (Fan-Out):
+   - Flight, Hotel, and Weather agents are completely INDEPENDENT of each other.
    - They only need the destination city from the user query (e.g. 'Dubai').
    - Hotel Agent does not need Flight data to search hotels, and Weather Agent does not need Hotel data.
-   - Therefore, running them sequentially wastes time. They can run concurrently (at the same time).
+   - Running them concurrently allows the slowest branch to dictate tool latency rather than 
+     their cumulative sum:
+        T_sequential = T_flight (~21s) + T_hotel (~8s) + T_weather (~3s) = ~32s
+        T_parallel   = max(T_flight, T_hotel, T_weather) = max(21s, 8s, 3s) = ~21s
+     -> Yields an immediate ~35% - 40% reduction in external tool wait time!
 
-2. Data Dependency:
+2. Data Dependency & Synchronization (Fan-In):
    - Only the Itinerary Agent depends on the outputs of all three (flights, hotels, and weather)
      to build a realistic day-by-day plan.
-   - Hence, Itinerary Agent waits until all 3 parallel agents finish before executing.
+   - Hence, for full vacation plans, Itinerary Agent acts as a barrier that waits until all 
+     selected parallel agents finish before executing.
 
+3. Intent-Driven Conditional Routing (Zero-Tool Bypass):
+   - 'follow_up' Intent: 
+     When user asks questions about an existing plan (e.g. "expenses in USD?"), all external 
+     tools are 100% BYPASSED (0.0s tool time). 
+     Final Agent synthesizes the response in ~1-2s directly from PostgresSaver checkpointer memory!
+   - 'specific_query' Intent: 
+     Runs strictly the requested single specialist agent and bypasses Itinerary Agent.
+     Example: Weather inquiry finishes in ~4-6s instead of ~35s!
+
+4. Guardrail Early-Exit Security:
+   - Evaluates request safety and travel relevance in ~0.5s.
+   - Unrelated, malicious, or adversarial prompts are blocked immediately before triggering any 
+     expensive LLMs or external API calls.
 '''
 # 2. Graph Edges & Routing Logic
 

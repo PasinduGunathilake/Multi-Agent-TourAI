@@ -54,14 +54,16 @@ and zero downtime.
 groq_smart = ChatGroq(
     model="openai/gpt-oss-120b",
     api_key=GROQ_API_KEY,
-    max_tokens=3500
+    max_tokens=3500,
+    max_retries=1,
 )
 logger.info(f"Groq LLM initialized with model: '{groq_smart.model_name}'")
 
 groq_fast = ChatGroq(
     model="openai/gpt-oss-20b",
     api_key=GROQ_API_KEY,
-    max_tokens=800
+    max_tokens=800,
+    max_retries=1,
 )
 logger.info(f"Groq LLM initialized with model: '{groq_fast.model_name}'")
 

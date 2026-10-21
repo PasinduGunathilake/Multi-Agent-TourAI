@@ -143,7 +143,16 @@ async def plan_stream(payload: TravelRequest):
                     if node_name == "final_agent":
                         messages = node_output.get("messages", [])
                         if messages:
-                            final_text = messages[-1].content
+                            raw_content = messages[-1].content
+                            if isinstance(raw_content, list):
+                                # Handle list of text/dict blocks
+                                final_text = "".join(
+                                    part if isinstance(part, str) else part.get("text", str(part))
+                                    for part in raw_content
+                                )
+                            else:
+                                final_text = str(raw_content or "")
+
                             # Notify node_complete without dumping full text at once
                             yield f"data: {json.dumps({'event': 'node_complete', 'node': 'final_agent', 'llm_calls': accumulated_state.get('llm_calls', 0)})}\n\n"
                             
@@ -159,7 +168,17 @@ async def plan_stream(payload: TravelRequest):
 
             # Final complete event
             messages = accumulated_state.get("messages", [])
-            final_answer = messages[-1].content if messages else ""
+            if messages:
+                raw_ans = messages[-1].content
+                if isinstance(raw_ans, list):
+                    final_answer = "".join(
+                        part if isinstance(part, str) else part.get("text", str(part))
+                        for part in raw_ans
+                    )
+                else:
+                    final_answer = str(raw_ans or "")
+            else:
+                final_answer = ""
 
             complete_payload = {
                 "event": "complete",

@@ -60,7 +60,7 @@ def input_guardrail(state: TravelState):
     logger.info("Guardrail PASSED: Valid travel query.")
     return {
         "guardrail_allowed": True,
-        "guardrail_reason": "",
+        "guardrail_reason": reason,
         "llm_calls": 1
     }
 

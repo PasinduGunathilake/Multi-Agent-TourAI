@@ -8,7 +8,9 @@ logger = get_logger(__name__)
 # HITL approval (Human_in_the_Loop)
 @log_execution
 def human_approval_agent(state: TravelState):
-    # Do not wrap interrupt( in try/except. Langgraph uses it to pause execution
+    logger.info("Human Approval: Pausing workflow to await human review...")
+
+    # Do not wrap interrupt() in try/except. LangGraph uses it to pause execution
     review = interrupt(
         {
             "question": "Do you approve this itinerary?",
@@ -20,12 +22,13 @@ def human_approval_agent(state: TravelState):
                 "approved": True,
                 "feedback": "Optional revision feedback",
             },
-
         }
     )
 
     approved = bool(review.get("approved", False))
     human_feedback = str(review.get("feedback", "")).strip()
+
+    logger.info(f"Human Approval: Resumed from review | Approved={approved} | Feedback='{human_feedback}'")
 
     return {
         "approved": approved,

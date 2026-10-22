@@ -45,5 +45,18 @@ class TravelState(TypedDict):
     # 3. Reasoning behind the supervisor's routing decision
     supervisor_reasoning: str
 
+    ### HITL (Human_in_the_Loop) states ###
+    # Question, asked from the User /request
+    approval_request: str
+
+    # Answer/approval from the user(True/false)
+    approved: bool
+
+    # User feedback
+    human_feedback: str
+
+    # Polished final response content from final_agent
+    final_response: str
+
 
 __all__ = ["TravelState"]

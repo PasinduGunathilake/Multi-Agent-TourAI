@@ -105,6 +105,9 @@ def log_execution(func):
             func_logger.info(f"Finished: {func.__name__} (took {duration}s)")
             return result
         except Exception as e:
+            # GraphInterrupt is LangGraph's internal pause mechanism, not an error
+            if e.__class__.__name__ == "GraphInterrupt":
+                raise e
             duration = round(time.time() - start_time, 2)
             func_logger.error(
                 f"Failed: {func.__name__} after {duration}s | Error: {str(e)}", 

@@ -149,7 +149,29 @@ async def plan_stream(payload: TravelRequest):
             # Stream updates from the LangGraph execution graph
             for update in travel_graph.stream(initial_state, config=config, stream_mode="updates"):
                 for node_name, node_output in update.items():
-                    accumulated_state.update(node_output)
+                    # Catch LangGraph HITL interrupt event immediately
+                    if node_name == "__interrupt__":
+                        interrupt_items = node_output if isinstance(node_output, (list, tuple)) else [node_output]
+                        first_interrupt = interrupt_items[0] if interrupt_items else None
+                        interrupt_val = getattr(first_interrupt, "value", first_interrupt) if first_interrupt else {}
+                        payload_val = interrupt_val if isinstance(interrupt_val, dict) else {"question": str(interrupt_val)}
+
+                        logger.info(f"Workflow paused at HITL interrupt | Thread: {thread_id}")
+                        approval_payload = {
+                            "event": "approval_required",
+                            "thread_id": thread_id,
+                            "question": payload_val.get("question", "Do you approve this draft itinerary?"),
+                            "draft_itinerary": payload_val.get("draft_itinerary") or accumulated_state.get("itinerary", ""),
+                            "flight_results": accumulated_state.get("flight_results", ""),
+                            "hotel_results": accumulated_state.get("hotel_results", ""),
+                            "weather_results": accumulated_state.get("weather_results", ""),
+                            "llm_calls": accumulated_state.get("llm_calls", 0),
+                        }
+                        yield f"data: {json.dumps(approval_payload)}\n\n"
+                        return
+
+                    if isinstance(node_output, dict):
+                        accumulated_state.update(node_output)
 
                     # Trigger UI fan_out indicator only when specialist tool agents are actually scheduled
                     if node_name == "supervisor" and accumulated_state.get("intent") != "follow_up":
@@ -288,7 +310,8 @@ async def resume_stream(payload: ResumeRequest):
 
             for update in travel_graph.stream(resume_command, config=config, stream_mode="updates"):
                 for node_name, node_output in update.items():
-                    accumulated_state.update(node_output)
+                    if isinstance(node_output, dict):
+                        accumulated_state.update(node_output)
 
                     if node_name == "final_agent":
                         messages = node_output.get("messages", [])

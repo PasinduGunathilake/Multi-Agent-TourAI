@@ -10,7 +10,7 @@ from Multi_Agent_TourAI.utils import get_logger, log_execution
 # Set up logging for this agent
 logger = get_logger(__name__)
 
-
+# Final Response agent with HITL feedback
 @log_execution
 def final_response_agent(state: TravelState):
     """
@@ -56,6 +56,7 @@ def final_response_agent(state: TravelState):
 
         response = smart_llm.invoke(messages_payload)
         return {
+            "final_response": response.content,
             "messages": [response],
             "llm_calls": 1,
         }
@@ -78,6 +79,7 @@ def final_response_agent(state: TravelState):
             HumanMessage(content=specific_prompt),
         ])
         return {
+            "final_response": response.content,
             "messages": [response],
             "llm_calls": 1,
         }
@@ -85,7 +87,24 @@ def final_response_agent(state: TravelState):
 
     # CASE 3: Full New Travel Plan (Standard 7-section guide)
     logger.info("Final Agent: Synthesizing full travel response package...")
+
+    # Get HITL Feedback from user
+    approved = state.get("approved", True)
+    feedback = state.get("human_feedback", "")
+
+    if approved:
+        review_instruction = (
+            "The user approved the draft itinerary. Preserve its key decisions "
+            "and craft a polished, professional final travel response."
+        )
+    else:
+        review_instruction = (
+            f"The user requested revisions to the draft itinerary. "
+            f"Carefully incorporate this user feedback: '{feedback}'."
+        )
+
     prompt = FINAL_RESPONSE_PROMPT_TEMPLATE.format(
+        review_instruction=review_instruction,
         user_query=state.get("user_query", ""),
         flight_results=state.get("flight_results", ""),
         hotel_results=state.get("hotel_results", ""),
@@ -99,6 +118,7 @@ def final_response_agent(state: TravelState):
     ])
 
     return {
+        "final_response": response.content,
         "messages": [response],
         "llm_calls": 1,
     }

@@ -1,4 +1,5 @@
 import uuid
+from langgraph.types import Command # for human approval flow
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import HumanMessage
 from Multi_Agent_TourAI.graph.state import TravelState
@@ -11,6 +12,7 @@ from Multi_Agent_TourAI.memory.checkpointer import get_checkpointer
 from Multi_Agent_TourAI.memory.store import get_store
 from Multi_Agent_TourAI.guardrails.inputguardrail import input_guardrail, guardrail_blocked
 from Multi_Agent_TourAI.agents.supervisor_agent import supervisor_agent
+from Multi_Agent_TourAI.agents.approval_agent import human_approval_agent
 from Multi_Agent_TourAI.utils import get_logger, log_execution
 
 # Initialize logger
@@ -26,13 +28,14 @@ graph.add_node("input_guardrail", input_guardrail)
 graph.add_node("guardrail_blocked", guardrail_blocked)
 # Add supervisor node to the graph
 graph.add_node("supervisor", supervisor_agent)
+# Add HITL node to the graph
+graph.add_node("human_approval", human_approval_agent)
 # Add all 5 agent nodes to the graph
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
 graph.add_node("weather_agent", weather_agent)
 graph.add_node("itinerary_agent", itinerary_agent)
 graph.add_node("final_agent", final_response_agent)
-
 
 
 
@@ -52,7 +55,7 @@ graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", END) 
 '''
 
-#### Method 2: Dynamic Intent-Aware & Parallel Multi-Agent Pipeline (Current Production Architecture)
+#### Method 2: Dynamic Intent-Aware, Parallel & HITL Multi-Agent Pipeline (Current Production Architecture)
 '''
                                   ┌───────┐
                                   │ START │
@@ -87,11 +90,18 @@ graph.add_edge("final_agent", END)
               │  │ itinerary_agent │ ◄── (Itinerary Only) ─────┤                                 │
               │  └────────┬────────┘                           │                                 │
               │           │                                    │                                 │
+              │           ▼                                    │                                 │
+              │  ┌──────────────────┐                          │                                 │
+              │  │  human_approval  │                          │                                 │
+              │  │  (HITL Pause ⏸️)  │                          │                                 │
+              │  └────────┬─────────┘                          │                                 │
+              │           │                                    │                                 │
+              │           │ [Approved / Feedback Applied]      │                                 │
               │           └──────────────────┐                 │                                 │
               │                              ▼                 ▼                                 ▼
               │                     ┌──────────────────────────────────────────────────────────────┐
               │                     │                         final_agent                          │
-              │                     │ (Itinerary Format / Specific Summary / Conversational Chat)  │
+              │                     │ (Itinerary Polish / Specific Summary / Conversational Chat)  │
               │                     └──────────────────────────────┬───────────────────────────────┘
               │                                                    │
               └───────────────────────────────┬────────────────────┘
@@ -119,16 +129,21 @@ WHY WE USE THIS DYNAMIC PARALLEL & INTENT-AWARE PIPELINE:
    - Hence, for full vacation plans, Itinerary Agent acts as a barrier that waits until all 
      selected parallel agents finish before executing.
 
-3. Intent-Driven Conditional Routing (Zero-Tool Bypass):
+3. Human-in-the-Loop (HITL) Verification & Review:
+   - Pauses execution via interrupt() immediately after the draft itinerary is generated.
+   - Allows the traveler to inspect the draft plan, approve it, or submit custom modifications.
+   - Preserves state in PostgreSQL checkpoints until the user resumes with Command(resume=...).
+
+4. Intent-Driven Conditional Routing (Zero-Tool Bypass):
    - 'follow_up' Intent: 
      When user asks questions about an existing plan (e.g. "expenses in USD?"), all external 
-     tools are 100% BYPASSED (0.0s tool time). 
+     tools and approval checks are 100% BYPASSED (0.0s tool time). 
      Final Agent synthesizes the response in ~1-2s directly from PostgresSaver checkpointer memory!
    - 'specific_query' Intent: 
-     Runs strictly the requested single specialist agent and bypasses Itinerary Agent.
+     Runs strictly the requested single specialist agent and bypasses Itinerary and Approval agents.
      Example: Weather inquiry finishes in ~4-6s instead of ~35s!
 
-4. Guardrail Early-Exit Security:
+5. Guardrail Early-Exit Security:
    - Evaluates request safety and travel relevance in ~0.5s.
    - Unrelated, malicious, or adversarial prompts are blocked immediately before triggering any 
      expensive LLMs or external API calls.
@@ -219,8 +234,9 @@ graph.add_conditional_edges(
     {"itinerary_agent": "itinerary_agent", "final_agent": "final_agent"},
 )
 
-# Sequential flow: Itinerary Agent -> Final Response Agent -> END
-graph.add_edge("itinerary_agent", "final_agent")
+# Sequential flow: Itinerary Agent -> Human Approval Agent -> Final Response Agent -> END
+graph.add_edge("itinerary_agent", "human_approval")
+graph.add_edge("human_approval", "final_agent")
 graph.add_edge("final_agent", END)
 
 # Early exit: Blocked requests terminate immediately without executing external APIs or LLMs
@@ -239,18 +255,68 @@ travel_graph = graph.compile(checkpointer=checkpointer, store=store)
 
 
 
-# 4. Workflow Runner Function
+# 4. Result Serializer & Workflow Runner Functions
+
+def _serialize_workflow_result(result: dict, thread_id: str, user_id: str) -> dict:
+    """
+    Serializes LangGraph result into a structured dictionary.
+    Handles HITL interrupt payloads if paused at human_approval node.
+    """
+    interrupts = result.get("__interrupt__", [])
+    interrupt_payload = None
+    if interrupts:
+        first_interrupt = interrupts[0]
+        payload = getattr(first_interrupt, "value", first_interrupt)
+        interrupt_payload = payload if isinstance(payload, dict) else {"value": payload}
+
+    messages = result.get("messages", [])
+    last_msg = messages[-1].content if messages else ""
+    answer = result.get("final_response") or last_msg
+
+    requires_approval = interrupt_payload is not None
+    if requires_approval and interrupt_payload:
+        # Paused on human approval: present draft itinerary to human
+        answer = interrupt_payload.get("draft_itinerary") or result.get("itinerary", "")
+        approval_question = interrupt_payload.get("question", "Do you approve this draft itinerary?")
+    else:
+        approval_question = result.get("approval_request", "")
+
+    return {
+        "thread_id": thread_id,
+        "user_id": user_id,
+        "answer": answer,
+        "requires_approval": requires_approval,
+        "approval_request": approval_question,
+        "flight_results": result.get("flight_results", ""),
+        "hotel_results": result.get("hotel_results", ""),
+        "weather_results": result.get("weather_results", ""),
+        "itinerary": (
+            interrupt_payload.get("draft_itinerary", "")
+            if interrupt_payload
+            else result.get("itinerary", "")
+        ),
+        "approved": result.get("approved"),
+        "human_feedback": result.get("human_feedback", ""),
+        "final_response": result.get("final_response", ""),
+        "llm_calls": result.get("llm_calls", 0),
+        "guardrail_allowed": result.get("guardrail_allowed", True),
+        "guardrail_reason": result.get("guardrail_reason", ""),
+    }
+
+
 @log_execution
 def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str | None = None) -> dict:
     """
     Main function to run the full travel planner agent workflow.
+    Starts execution and pauses if human approval is required.
 
     Parameters:
         user_input (str): The travel query provided by the user.
         thread_id (str, optional): A unique ID for session persistence.
+        user_id (str, optional): User ID for long-term profile persistence.
 
     Returns:
-        dict: Final answer and step-by-step results from all agents.
+        dict: Final answer or draft itinerary with approval request.
     """
     if not thread_id:
         thread_id = f"user_{uuid.uuid4().hex}"
@@ -263,7 +329,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
     config = {
         "configurable": {
             "thread_id": thread_id, # Checkpointer - current session (short term)
-            "user_id": user_id # Store - permenents user profile (long term)
+            "user_id": user_id,      # Store - permanent user profile (long term)
         }
     }
 
@@ -284,6 +350,10 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
             "hotel_results": "",
             "weather_results": "",
             "itinerary": "",
+            "approval_request": "",
+            "approved": False,
+            "human_feedback": "",
+            "final_response": "",
             "llm_calls": 0,
             "guardrail_allowed": True,
             "guardrail_reason": "",
@@ -292,21 +362,57 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
     # Invoke the graph with the initial state dictionary
     result = travel_graph.invoke(initial_input, config=config)
 
-    final_result = result["messages"][-1].content
-    logger.info(f"Workflow finished | Total LLM calls: {result.get('llm_calls', 0)}")
+    logger.info(f"Workflow reached checkpoint | Thread: {thread_id} | Total LLM calls: {result.get('llm_calls', 0)}")
+    return _serialize_workflow_result(result, thread_id, user_id)
 
-    return {
-        "thread_id": thread_id,
-        "user_id": user_id,
-        "answer": final_result,
-        "flight_results": result.get("flight_results", ""),
-        "hotel_results": result.get("hotel_results", ""),
-        "weather_results": result.get("weather_results", ""),
-        "itinerary": result.get("itinerary", ""),
-        "llm_calls": result.get("llm_calls", 0),
-        "guardrail_allowed": result.get("guardrail_allowed", True),
-        "guardrail_reason": result.get("guardrail_reason", ""),
+
+@log_execution
+def resume_travel_agent(
+    thread_id: str,
+    approved: bool,
+    feedback: str = "",
+    user_id: str | None = None,
+) -> dict:
+    """
+    Resumes the paused LangGraph workflow after human review.
+
+    Parameters:
+        thread_id (str): The session ID of the paused workflow.
+        approved (bool): True if user approves draft itinerary, False if changes requested.
+        feedback (str): Optional feedback or requested changes.
+        user_id (str, optional): User ID for long-term profile persistence.
+
+    Returns:
+        dict: Final polished travel response.
+    """
+    if not thread_id:
+        raise ValueError("thread_id is required to resume a travel plan.")
+
+    if not user_id:
+        user_id = "default_user"
+
+    logger.info(f"Resuming Workflow | Thread: {thread_id} | Approved: {approved} | Feedback: '{feedback}'")
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "user_id": user_id,
+        }
     }
 
+    # Resume graph execution using Command(resume=...)
+    result = travel_graph.invoke(
+        Command(
+            resume={
+                "approved": approved,
+                "feedback": feedback.strip(),
+            }
+        ),
+        config=config,
+    )
 
-__all__ = ["graph", "travel_graph", "run_travel_agent"]
+    logger.info(f"Workflow resumed & completed | Thread: {thread_id}")
+    return _serialize_workflow_result(result, thread_id, user_id)
+
+
+__all__ = ["graph", "travel_graph", "run_travel_agent", "resume_travel_agent"]

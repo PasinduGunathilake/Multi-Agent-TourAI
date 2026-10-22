@@ -43,7 +43,7 @@ graph.add_node("final_agent", final_response_agent)
 
 # 2. Define Execution Flow (Edges)
 
-#### Method 1: The sequential/ Synchronous multi-agent execution pipeline: slow execution
+#### Method 1: The sequential/ (Synchronous) multi-agent execution pipeline: slow execution
 '''
 # START ---------> Flight Agent ---------> Hotel Agent ---------> Weather Agent ---------> Itinerary Agent ---------> Final ---------> END
 
@@ -55,7 +55,7 @@ graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", END) 
 '''
 
-#### Method 2: Dynamic Intent-Aware, Parallel & HITL Multi-Agent Pipeline (Current Production Architecture)
+#### Method 2: Dynamic Intent-Aware, Parallel (Asynchronous) & HITL Multi-Agent Pipeline (Current Production Architecture)
 '''
                                   ┌───────┐
                                   │ START │
@@ -93,7 +93,7 @@ graph.add_edge("final_agent", END)
               │           ▼                                    │                                 │
               │  ┌──────────────────┐                          │                                 │
               │  │  human_approval  │                          │                                 │
-              │  │  (HITL Pause ⏸️)  │                          │                                 │
+              │  │  (HITL Pause)    │                          │                                 │
               │  └────────┬─────────┘                          │                                 │
               │           │                                    │                                 │
               │           │ [Approved / Feedback Applied]      │                                 │

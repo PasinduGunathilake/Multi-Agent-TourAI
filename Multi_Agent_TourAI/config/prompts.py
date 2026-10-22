@@ -117,6 +117,9 @@ Return consise trave; guidedance
 FINAL_RESPONSE_SYSTEM_PROMPT = "You are a professional AI travel booking assistant."
 
 FINAL_RESPONSE_PROMPT_TEMPLATE = """
+Human Review Instruction:
+{review_instruction}
+
 Here is the complete cost effective travel plan. Present it nicely.
 User Query:
 {user_query}

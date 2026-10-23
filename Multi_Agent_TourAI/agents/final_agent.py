@@ -108,6 +108,7 @@ def final_response_agent(state: TravelState):
         user_query=state.get("user_query", ""),
         flight_results=state.get("flight_results", ""),
         hotel_results=state.get("hotel_results", ""),
+        maps_results=state.get("maps_results", "Attractions data not available."),
         itinerary=state.get("itinerary", ""),
         weather_results=state.get("weather_results", "Weather data not available."),
     )

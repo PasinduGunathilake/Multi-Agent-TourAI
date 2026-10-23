@@ -13,6 +13,7 @@ Multi_Agent_TourAI/agents/final_agent.py
 Multi_Agent_TourAI/agents/flight_agent.py
 Multi_Agent_TourAI/agents/hotel_agent.py
 Multi_Agent_TourAI/agents/itinerary_agent.py
+Multi_Agent_TourAI/agents/maps_agent.py
 Multi_Agent_TourAI/agents/supervisor_agent.py
 Multi_Agent_TourAI/agents/weather_agent.py
 Multi_Agent_TourAI/config/__init__.py
@@ -26,6 +27,7 @@ Multi_Agent_TourAI/llms/__init__.py
 Multi_Agent_TourAI/llms/llm.py
 Multi_Agent_TourAI/mcp/__init__.py
 Multi_Agent_TourAI/mcp/aviationstack_mcp.py
+Multi_Agent_TourAI/mcp/geoapify_mcp.py
 Multi_Agent_TourAI/mcp/tavily_mcp.py
 Multi_Agent_TourAI/mcp/weather_mcp.py
 Multi_Agent_TourAI/memory/__init__.py

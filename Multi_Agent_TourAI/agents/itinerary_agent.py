@@ -14,7 +14,8 @@ def itinerary_agent(state: TravelState):
         user_query = state.get("user_query", ""),
         flight_results = state.get("flight_results", "Not requested."),
         hotel_results = state.get("hotel_results", "Not requested."),
-        weather_results = state.get("weather_results", "Not requested.")
+        weather_results = state.get("weather_results", "Not requested."),
+        maps_results = state.get("maps_results", "Not requested.")
     )
     response = smart_llm.invoke([
         SystemMessage(content=ITINERARY_SYSTEM_PROMPT),

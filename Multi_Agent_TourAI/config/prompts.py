@@ -24,18 +24,20 @@ Available Specialist Agents:
 - flight_agent: Searches live flights, routes, airlines, and airports.
 - hotel_agent: Searches live hotels, resorts, and accommodations via Tavily.
 - weather_agent: Fetches live weather forecasts and temperatures.
+- maps_agent: Searches verified tourist attractions, landmarks, cafes/dining, and calculates travel routes/distances via Geoapify MCP.
 - itinerary_agent: Generates a day-by-day travel plan, sightseeing schedule, or activity itinerary.
 
 Intents:
 1. "new_plan":
    The user wants to plan a complete new trip, holiday, or vacation from scratch (e.g. "5 Days in Tokyo & Kyoto", "Plan a trip to Paris").
-   -> selected_agents MUST be: ["flight_agent", "hotel_agent", "weather_agent"]
+   -> selected_agents MUST be: ["flight_agent", "hotel_agent", "weather_agent", "maps_agent"]
 
 2. "specific_query":
    The user specifically asks for ONLY one or two aspects for a destination without needing a full vacation package:
    - Only flights (e.g. "Find flights from CMB to Singapore") -> ["flight_agent"]
    - Only hotels (e.g. "Best hotels in Dubai Marina") -> ["hotel_agent"]
    - Only weather (e.g. "What is the weather in London next week?") -> ["weather_agent"]
+   - Only attractions/routes/cafes/distances (e.g. "Best cafes near Eiffel Tower", "How far is Colosseum from Vatican?", "Top sights in Rome") -> ["maps_agent"]
    - Only itinerary/activities (e.g. "Give me a 3-day sightseeing plan for Rome without flights or hotels") -> ["itinerary_agent"]
 
 3. "follow_up":
@@ -67,7 +69,7 @@ Latest User Query:
 
 
 # itinerary_agent
-ITINERARY_SYSTEM_PROMPT = "You are an expert travel agent"
+ITINERARY_SYSTEM_PROMPT = "You are an expert travel agent."
 
 ITINERARY_PROMPT_TEMPLATE = """
 Create a complete travel itinerary.
@@ -79,11 +81,14 @@ Hotel Results:
 {hotel_results}
 Weather Results:
 {weather_results}
-Make the itinerary practical, budget-aware, and easy to follow.
+Verified Attractions & Maps Data:
+{maps_results}
+
+Make the itinerary practical, budget-aware, geographically sensible (avoiding zig-zag routes by clustering nearby sights), and easy to follow.
 """
 
 # flight_agent
-FLIGHT_SYSTEM_PROMPT = "You are an expert travel flight planning agent"
+FLIGHT_SYSTEM_PROMPT = "You are an expert travel flight planning agent."
 
 FLIGHT_PROMPT_TEMPLATE = """
 You are a travel flight expert.
@@ -108,7 +113,7 @@ Generate:
 6.peak season price warnings
 7.booking advice
 
-Return consise trave; guidedance
+Return concise travel guidance.
 """
 
 
@@ -127,6 +132,8 @@ Flights:
 {flight_results}
 Hotels:
 {hotel_results}
+Attractions & Maps Data:
+{maps_results}
 Itinerary:
 {itinerary}
 Weather & Climate Conditions:
@@ -136,22 +143,24 @@ Format the final answer beautifully using these sections:
 1. Travel Overview
 2. Flight Information
 3. Hotel Suggestions
-4. Weather Forecast & Packing Tips
-5. Day-by-Day Itinerary
-6. Cost Estimation
-7. Final Recommendations and Travel Tips
+4. Top Attractions & Geographic Highlights (from Maps)
+5. Weather Forecast & Packing Tips
+6. Day-by-Day Itinerary
+7. Cost Estimation
+8. Final Recommendations and Travel Tips
 
 Important:
 - Be clear and practical.
 - If presenting structured data in tables (such as Travel Overview, Hotel Suggestions, Weather Forecast), use valid GitHub Flavored Markdown tables. Each table row MUST be on its own separate line with newlines between rows (never concatenate multiple table rows on the same line).
 - Mention that live flight API may not provide ticket prices if pricing is unavailable.
 - Use the real-time weather and forecast data to advise on what clothes to pack and best times for outdoor activities.
+- In Section 8 (Final Recommendations), proactively mention that traveler can request local cafes, dining spots, or transit/walking directions if needed.
 - Keep the response useful for real travel planning.
 """
 
 
 
-# Weather_agent
+# Destination extractor
 DESTINATION_EXTRACTOR_PROMPT_TEMPLATE = """
 Extract ONLY the destination city name from the travel query.
 Do NOT include any punctuation, quotes, or extra words.

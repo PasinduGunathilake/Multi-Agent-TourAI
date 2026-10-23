@@ -1,51 +1,83 @@
 "use client";
 
 import React from "react";
-import { Zap, ShieldCheck, Cpu, Globe2, Network } from "lucide-react";
+import { Zap, ShieldCheck, Cpu, GitBranch, UserCheck, Network, Lock } from "lucide-react";
 import ScrollReveal from "./ScrollReveal";
 import { GlowingEffect } from "./ui/glowing-effect";
 
 export default function BentoGridFeatures() {
   const features = [
     {
-      icon: <Network className="w-5 h-5 text-teal-400" />,
-      title: "Fan-Out / Fan-In Multi-Agent Swarm",
-      desc: "START branches concurrently into Flight, Hotel, and Weather MCP agents, synchronizing into Itinerary & Final Dossier agents to cut execution time by over 50%.",
-      tag: "LangGraph Fan-Out/In",
+      icon: <GitBranch className="w-5 h-5 text-sky-400" />,
+      title: "Smart Intent Routing",
+      tag: "Supervisor Orchestrator",
+      highlight: "Sends every question down the fastest possible route.",
+      desc: "Full vacations launch all agents in parallel. Quick lookups (like weather) trigger only 1 specialist agent in ~4–6s. Follow-up questions (like currency conversion) skip external tools entirely and answer from memory in ~1–2s.",
+      stat: "⚡ 3 dynamic routes • 1 Fast LLM call (~1s)",
       colSpan: "md:col-span-2",
+      accentColor: "rgba(56, 189, 248, 0.12)",
+      borderColor: "rgba(56, 189, 248, 0.2)",
+      tagColor: "text-sky-400",
+    },
+    {
+      icon: <Lock className="w-5 h-5 text-emerald-400" />,
+      title: "Input Guardrail & Prompt Security",
+      tag: "Security Gate (< 0.5s)",
+      highlight: "Blocks prompt injections, jailbreaks, and off-topic requests.",
+      desc: "A sub-500ms AI filter inspects incoming queries. Malicious attacks or non-travel questions exit immediately at guardrail_blocked — saving expensive 120B tokens and API credits, backed by a fail-open safety policy.",
+      stat: "🛡️ < 500ms overhead • Fail-Open safe",
+      colSpan: "md:col-span-1",
+      accentColor: "rgba(52, 211, 153, 0.1)",
+      borderColor: "rgba(52, 211, 153, 0.2)",
+      tagColor: "text-emerald-400",
+    },
+    {
+      icon: <Network className="w-5 h-5 text-teal-400" />,
+      title: "Parallel Tool Execution",
+      tag: "Fan-Out Concurrency",
+      highlight: "Runs flights, hotels, and weather searches at the same time.",
+      desc: "Instead of waiting for one search after another (~32s), all 3 agents run in parallel. The slowest tool sets the clock: max(21s, 8s, 3s) = ~21s — saving ~11 seconds (35–40% faster). Hotel uses pure Tavily search (0 LLM overhead).",
+      stat: "⚡ ~21s parallel vs ~32s sequential (~35% faster)",
+      colSpan: "md:col-span-1",
       accentColor: "rgba(45, 212, 191, 0.12)",
       borderColor: "rgba(45, 212, 191, 0.2)",
       tagColor: "text-teal-400",
     },
     {
-      icon: <Cpu className="w-5 h-5 text-sky-400" />,
-      title: "Hybrid Two-Tier LLM & Fallback",
-      desc: "Fast Groq 20B (~0.5s) for destination extraction + Smart Groq 120B for deep reasoning, with automatic zero-downtime failover to Google Gemini 3.5 Flash Lite.",
-      tag: "Groq 120B + Gemini",
+      icon: <UserCheck className="w-5 h-5 text-amber-400" />,
+      title: "Human-in-the-Loop (HITL) Review",
+      tag: "HITL State Pause",
+      highlight: "Review, approve, or adjust your travel plan before finalization.",
+      desc: "LangGraph's interrupt() pauses the workflow once the itinerary is drafted. You inspect flights, hotels, and schedule, then approve or request changes. Resumes instantly from the saved database checkpoint without repeating tool calls.",
+      stat: "⏸️ LangGraph interrupt() • PostgreSQL checkpoint",
       colSpan: "md:col-span-1",
-      accentColor: "rgba(56, 189, 248, 0.1)",
-      borderColor: "rgba(56, 189, 248, 0.2)",
-      tagColor: "text-sky-400",
+      accentColor: "rgba(251, 191, 36, 0.1)",
+      borderColor: "rgba(251, 191, 36, 0.2)",
+      tagColor: "text-amber-400",
     },
     {
-      icon: <Globe2 className="w-5 h-5 text-indigo-400" />,
-      title: "Model Context Protocol (MCP)",
-      desc: "AviationStack MCP (live routes/taxes), Tavily Remote MCP (hotel intelligence), and OpenWeatherMap FastMCP server ensure zero-hallucination real-time grounding.",
-      tag: "FastMCP Standard",
+      icon: <Zap className="w-5 h-5 text-cyan-400" />,
+      title: "Dual-Tier Persistent Memory",
+      tag: "Session + Long-Term Store",
+      highlight: "Remembers your active conversation and your permanent preferences.",
+      desc: "Short-Term Memory (PostgresSaver) stores chat history and intermediate outputs per thread. Long-Term Memory (PostgresStore) persists traveler preferences (airlines, dietary rules, budget) across all sessions under ('users', user_id).",
+      stat: "🧠 PostgresSaver (thread) + PostgresStore (user)",
       colSpan: "md:col-span-1",
+      accentColor: "rgba(6, 182, 212, 0.1)",
+      borderColor: "rgba(6, 182, 212, 0.2)",
+      tagColor: "text-cyan-400",
+    },
+    {
+      icon: <ShieldCheck className="w-5 h-5 text-indigo-400" />,
+      title: "Model Tiering & Zero-Downtime Fallback",
+      tag: "Groq LPU + Google Gemini",
+      highlight: "Ultra-fast reasoning paired with automatic multi-cloud backup.",
+      desc: "Task-based tiering assigns fast gpt-oss-20b (~0.5s) to guardrails/routing, and flagship gpt-oss-120b (~3–6s) to creative itineraries. If Groq encounters rate limits or outages, requests automatically failover to Google Gemini without session interruption.",
+      stat: "🔄 Groq 120B ➔ Gemini flash-lite ➔ Groq 20B",
+      colSpan: "md:col-span-3",
       accentColor: "rgba(129, 140, 248, 0.1)",
       borderColor: "rgba(129, 140, 248, 0.2)",
       tagColor: "text-indigo-400",
-    },
-    {
-      icon: <ShieldCheck className="w-5 h-5 text-emerald-400" />,
-      title: "Dual PostgreSQL Memory (Checkpointer + Store)",
-      desc: "PostgresSaver tracks short-term thread states and active turn recovery, while PostgresStore durably retains traveler preferences across long-term sessions.",
-      tag: "ACID Guaranteed",
-      colSpan: "md:col-span-2",
-      accentColor: "rgba(52, 211, 153, 0.1)",
-      borderColor: "rgba(52, 211, 153, 0.2)",
-      tagColor: "text-emerald-400",
     },
   ];
 
@@ -55,16 +87,11 @@ export default function BentoGridFeatures() {
         {/* Section Header */}
         <ScrollReveal direction="up" durationMs={800}>
           <div className="flex flex-col items-center text-center mb-14">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-xs font-mono text-teal-400 mb-4">
-              <Zap className="w-3.5 h-3.5" />
-              <span>Autonomous Intelligence</span>
-            </div>
             <h2 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
-              Why TourAI Multi-Agent Infrastructure?
+              Built on Modern Agentic Engineering
             </h2>
-            <p className="text-sm text-white/50 max-w-lg mx-auto mt-3 leading-relaxed">
-              Traditional travel apps rely on manual filters. TourAI dispatches dedicated autonomous agents
-              with real-time tool-calling capabilities across your entire network.
+            <p className="text-sm text-white/50 max-w-xl mx-auto mt-3 leading-relaxed">
+              Groq LPU speed (<code className="text-teal-300 font-mono text-[11px]">gpt-oss-20b</code> &amp; <code className="text-indigo-300 font-mono text-[11px]">120b</code>) with Google Gemini failover, Tavily MCP web search (0 LLM), LangGraph HITL interrupt, and PostgreSQL Dual Memory.
             </p>
           </div>
         </ScrollReveal>
@@ -104,27 +131,36 @@ export default function BentoGridFeatures() {
                     }}
                   />
 
-                <div className="relative z-10">
-                  {/* Icon + Tag row */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div
-                      className="p-2.5 rounded-xl border"
-                      style={{
-                        background: item.accentColor,
-                        borderColor: item.borderColor,
-                      }}
-                    >
-                      {item.icon}
-                    </div>
-                    <span className={`text-[10px] font-mono px-2.5 py-1 rounded-full bg-white/5 border border-white/8 ${item.tagColor}`}>
-                      {item.tag}
-                    </span>
-                  </div>
+                  <div className="relative z-10 flex flex-col h-full justify-between">
+                    <div>
+                      {/* Icon + Tag row */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div
+                          className="p-2.5 rounded-xl border"
+                          style={{
+                            background: item.accentColor,
+                            borderColor: item.borderColor,
+                          }}
+                        >
+                          {item.icon}
+                        </div>
+                        <span className={`text-[10px] font-medium px-2.5 py-1 rounded-full bg-white/5 border border-white/8 ${item.tagColor}`}>
+                          {item.tag}
+                        </span>
+                      </div>
 
-                  <h3 className="text-lg font-semibold text-white mb-2 tracking-tight">{item.title}</h3>
-                  <p className="text-xs text-white/55 leading-relaxed">{item.desc}</p>
+                      <h3 className="text-base sm:text-lg font-semibold text-white mb-1.5 tracking-normal">{item.title}</h3>
+                      <p className="text-xs font-medium text-white/90 mb-2 leading-snug">{item.highlight}</p>
+                      <p className="text-xs text-white/55 leading-relaxed">{item.desc}</p>
+                    </div>
+
+                    {item.stat && (
+                      <div className="mt-5 pt-3 border-t border-white/8 flex items-center text-[11px] font-medium text-white/60">
+                        <span>{item.stat}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
               </div>
             </ScrollReveal>
           ))}

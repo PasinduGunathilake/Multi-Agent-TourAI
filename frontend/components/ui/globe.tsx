@@ -103,7 +103,7 @@ export function Globe({ globeConfig, data }: WorldProps) {
     maxRings: 3,
     initialPosition: { lat: 22.3193, lng: 114.1694 },
     autoRotate: true,
-    autoRotateSpeed: 0.5,
+    autoRotateSpeed: 0.7,
     ...globeConfig,
   };
 

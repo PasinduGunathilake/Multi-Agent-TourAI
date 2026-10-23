@@ -1,7 +1,19 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: var(--font-sans), "Plus Jakarta Sans", var(--font-outfit), "Outfit", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: var(--font-outfit), "Outfit", "Plus Jakarta Sans", sans-serif;
+  --font-mono: var(--font-sans), "Plus Jakarta Sans", "Outfit", ui-monospace, SFMono-Regular, monospace;
+}
+
 /* ─── Design Tokens ─── */
 :root {
+  --font-sans: "Plus Jakarta Sans", "Outfit", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-outfit: "Outfit", "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-inter: var(--font-sans);
+  --font-serif: var(--font-outfit);
+  --font-mono: var(--font-sans);
+
   --bg: #000000;
   --text: #ffffff;
   --muted: #9a9a9a;
@@ -33,11 +45,31 @@
   --lede-max: 500px;
 }
 
+/* ─── Modern Tech AI Typography (Rounded Geometric Aesthetic) ─── */
+.font-sans {
+  font-family: var(--font-sans), "Plus Jakarta Sans", "Outfit", system-ui, -apple-system, sans-serif !important;
+}
+
+.font-serif {
+  font-family: var(--font-outfit), "Outfit", "Plus Jakarta Sans", sans-serif !important;
+}
+
+.font-mono {
+  font-family: var(--font-sans), "Plus Jakarta Sans", "Outfit", monospace !important;
+  font-feature-settings: "tnum" 1;
+}
+
+.editorial-accent {
+  font-family: var(--font-outfit), "Outfit", "Plus Jakarta Sans", sans-serif !important;
+  font-style: italic;
+  font-weight: 600;
+}
+
 /* ─── Base Reset ─── */
 html, body {
   background: #000000;
   color: #ffffff;
-  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans), "Plus Jakarta Sans", "Outfit", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -453,6 +485,8 @@ body.menu-open .menu-backdrop { opacity: 1; visibility: visible; backdrop-filter
 
 /* ─── Premium Animated Badge ─── */
 .badge {
+  font-family: var(--font-mono), "JetBrains Mono", "Geist Mono", monospace;
+  font-feature-settings: "tnum" 1;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -489,7 +523,7 @@ body.menu-open .menu-backdrop { opacity: 1; visibility: visible; backdrop-filter
 
 /* ─── Hero H1 ─── */
 .hero h1 {
-  font-family: "Inter", sans-serif;
+  font-family: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: var(--h1);
   font-weight: 700;
   letter-spacing: -0.05em;
@@ -506,12 +540,13 @@ body.menu-open .menu-backdrop { opacity: 1; visibility: visible; backdrop-filter
   padding: 0.05em 0.1em 0.12em;
 }
 
-/* Animated gradient on "AI agents" em tag */
+/* Animated gradient on "AI agents" em tag with Instrument Serif Editorial Accent */
 .hero h1 em {
+  font-family: var(--font-serif), "Instrument Serif", Georgia, serif;
   font-style: italic;
-  font-weight: 300;
-  font-size: 1.06em;
-  letter-spacing: -0.04em;
+  font-weight: 400;
+  font-size: 1.1em;
+  letter-spacing: -0.02em;
   background: linear-gradient(135deg, #2dd4bf 0%, #38bdf8 35%, #818cf8 65%, #a78bfa 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;

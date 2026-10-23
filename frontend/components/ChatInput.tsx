@@ -85,27 +85,21 @@ export default function ChatInput({
             className="flex-1 bg-transparent border-none text-sm text-white placeholder-white/35 outline-none font-normal"
           />
 
-          {/* Engine Badge / Model Dropdown */}
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/6 border border-white/8 text-[11px] font-mono text-white/60 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
-            <span>Groq 120B · Gemini Fallback</span>
-          </div>
-
           {/* Submit / Send Button */}
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer ${
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 ${
               input.trim()
-                ? "bg-gradient-to-r from-teal-400 to-sky-400 text-black shadow-lg shadow-teal-500/25 hover:scale-105 active:scale-95"
-                : "bg-white/10 border border-white/12 text-white/60 hover:text-white hover:bg-white/15 cursor-not-allowed"
+                ? "bg-gradient-to-r from-teal-400 to-sky-400 text-black shadow-lg shadow-teal-500/35 hover:shadow-teal-400/50 hover:scale-105 active:scale-95 cursor-pointer"
+                : "bg-white/15 border border-white/25 text-white/90 hover:bg-white/20 cursor-not-allowed shadow-sm"
             }`}
             title="Submit to Agent Swarm"
           >
             {isLoading ? (
               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
             ) : (
-              <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+              <ArrowUp className="w-4.5 h-4.5 stroke-[2.5]" />
             )}
           </button>
         </form>

@@ -18,13 +18,13 @@ export function HeroGlobe({
     pointSize: 4,
     globeColor: "#062056",
     showAtmosphere: true,
-    atmosphereColor: "#38bdf8",
+    atmosphereColor: "#347aeaff",
     atmosphereAltitude: 0.15,
     emissive: "#062056",
     emissiveIntensity: 0.15,
     shininess: 0.9,
-    polygonColor: "rgba(255,255,255,0.7)",
-    ambientLight: "#38bdf8",
+    polygonColor: "rgba(255, 255, 255, 0.7)",
+    ambientLight: "#20dfd8ff",
     directionalLeftLight: "#ffffff",
     directionalTopLight: "#ffffff",
     pointLight: "#ffffff",
@@ -35,7 +35,7 @@ export function HeroGlobe({
     initialPosition: { lat: 22.3193, lng: 114.1694 },
     autoRotate: true,
     autoRotateSpeed: 0.6,
-    cameraZ: 260, // Sized so full spherical height and poles fit cleanly without clipping
+    cameraZ: 280, // Sized so full spherical height and poles fit cleanly without clipping
   };
 
   const colors = ["#06b6d4", "#3b82f6", "#6366f1", "#14b8a6", "#38bdf8"];
@@ -341,9 +341,15 @@ export function HeroGlobe({
 
   return (
     <div className={className}>
-      {/* Radial Glow underneath the globe */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-[500px] md:w-[750px] lg:w-[1000px] h-[500px] md:h-[750px] lg:h-[1000px] rounded-full bg-gradient-to-tr from-teal-500/15 via-sky-500/10 to-indigo-500/15 blur-[120px]" />
+      {/* Soft circular ambient vignette behind the globe (fades seamlessly to 0% opacity with zero boundary clipping) */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none" aria-hidden="true">
+        <div
+          className="w-[380px] sm:w-[460px] md:w-[540px] h-[380px] sm:h-[460px] md:h-[540px] rounded-full pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle at center, rgba(99, 236, 220, 0.22) 30%, rgba(6, 171, 248, 0.12) 30%, rgba(99, 102, 241, 0.04) 52%, transparent 10%)",
+          }}
+        />
       </div>
 
       {/* 3D World Canvas */}
@@ -365,7 +371,7 @@ export function GlobeDemo() {
           transition={{ duration: 0.8 }}
           className="relative z-30 mb-2"
         >
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-xs font-mono text-sky-300 mb-3">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-xs font-sans font-medium text-sky-300 mb-3">
             <span>Live Flight Route Mesh</span>
           </div>
           <h2 className="text-2xl md:text-4xl font-bold text-white tracking-tight">

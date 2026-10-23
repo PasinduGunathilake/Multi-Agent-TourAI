@@ -1,14 +1,31 @@
 "use client";
 
 import React from "react";
-import { Plane, Hotel, Map, BrainCircuit, Database, CheckCircle2, Loader2, ChevronRight, CloudSun, FileCheck } from "lucide-react";
+import {
+  Plane,
+  Hotel,
+  Map,
+  BrainCircuit,
+  Database,
+  CheckCircle2,
+  Loader2,
+  ChevronRight,
+  CloudSun,
+  FileCheck,
+  ShieldAlert,
+  GitBranch,
+  UserCheck,
+} from "lucide-react";
 
 export interface AgentStepStatus {
   step: number;
+  guardrailStatus?: "idle" | "running" | "done" | "blocked";
+  supervisorStatus?: "idle" | "running" | "done";
   flightAgent: "idle" | "running" | "done";
   hotelAgent: "idle" | "running" | "done";
   weatherAgent?: "idle" | "running" | "done";
   itineraryAgent: "idle" | "running" | "done";
+  approvalStatus?: "idle" | "awaiting" | "approved" | "revised";
   finalAgent?: "idle" | "running" | "done";
   currentAgent: string;
   elapsedMs: number;
@@ -63,7 +80,7 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
       key: "itineraryAgent" as const,
       icon: <Map className="w-4 h-4" />,
       name: "Itinerary Agent",
-      detail: "Groq 120B · State Fusion (Smart LLM)",
+      detail: "Groq 120B · State Fusion & Draft Plan",
       accentColor: "#2dd4bf",
       bgClass: "bg-teal-500/8 border-teal-500/18",
       iconBg: "bg-teal-500/12 border border-teal-500/20 text-teal-400",
@@ -108,10 +125,14 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
             <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)] animate-pulse" />
             <h3 className="text-sm font-semibold text-white flex items-center gap-1.5">
               <BrainCircuit className="w-4 h-4 text-sky-400" />
-              LangGraph Fan-Out / Fan-In Orchestrator
+              LangGraph StateGraph Workflow Inspector
             </h3>
           </div>
           <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-mono text-emerald-300">
+              <ShieldAlert className="w-3 h-3" />
+              Guardrail Active
+            </span>
             <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-[11px] font-mono text-teal-300">
               <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
               FastMCP Active
@@ -134,7 +155,7 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
           </div>
         )}
 
-        {/* Agent Nodes Layout: Fan-Out Row (3) + Fan-In Row (2) */}
+        {/* Agent Nodes Layout */}
         <div className="p-5 space-y-4">
           {/* Fan-Out Stage Header */}
           <div className="flex items-center justify-between text-[11px] text-white/40 font-mono px-1">
@@ -142,7 +163,7 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
               <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
               STAGE 1: Fan-Out Concurrency (3 Parallel MCP Threads)
             </span>
-            <span>~50% Latency Reduction</span>
+            <span>~35%-40% Latency Reduction (max T)</span>
           </div>
 
           {/* 3 Parallel Fan-Out Cards */}
@@ -188,7 +209,7 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
           <div className="flex items-center justify-between text-[11px] text-white/40 font-mono px-1 pt-1">
             <span className="flex items-center gap-1.5 text-indigo-400">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-              STAGE 2: Fan-In Convergence & Synthesis (Hybrid Smart LLM)
+              STAGE 2: Fan-In Convergence & Synthesis (Hybrid Smart LLM + HITL)
             </span>
             <span>Groq 120B Flagship + Gemini Fallback</span>
           </div>
@@ -232,18 +253,30 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
             })}
           </div>
 
-          {/* Flow Bar at bottom */}
-          <div className="mt-2 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-white/40">
+          {/* Full Workflow Sequence Bar */}
+          <div className="mt-2 pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-white/40 gap-2">
             <div className="flex items-center gap-2">
               <ChevronRight className="w-3.5 h-3.5 text-white/20" />
               <span>Current Status: <span className="text-white/70 font-medium">{status.currentAgent || "Awaiting Request"}</span></span>
             </div>
-            <div className="hidden sm:flex items-center gap-1 font-mono text-[10px]">
-              <span className="text-teal-400">START</span>
+            <div className="flex items-center gap-1 font-mono text-[10px] overflow-x-auto custom-scrollbar py-1">
+              <span className="text-white/40">START</span>
+              <span className="text-white/20">→</span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 flex items-center gap-1">
+                <ShieldAlert className="w-2.5 h-2.5" /> guardrail
+              </span>
+              <span className="text-white/20">→</span>
+              <span className="px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 flex items-center gap-1">
+                <GitBranch className="w-2.5 h-2.5" /> supervisor
+              </span>
               <span className="text-white/20">→</span>
               <span className="px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-300">Fan-Out [3]</span>
               <span className="text-white/20">→</span>
-              <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300">itinerary_agent</span>
+              <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300">itinerary</span>
+              <span className="text-white/20">→</span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 flex items-center gap-1">
+                <UserCheck className="w-2.5 h-2.5" /> HITL
+              </span>
               <span className="text-white/20">→</span>
               <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300">final_agent</span>
               <span className="text-white/20">→</span>

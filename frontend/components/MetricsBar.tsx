@@ -1,31 +1,35 @@
 "use client";
 
 import React from "react";
-import { Route, Zap, Globe, ShieldCheck } from "lucide-react";
+import { Zap, ShieldCheck, Clock, Database } from "lucide-react";
 import ScrollReveal from "./ScrollReveal";
 import { GlowingEffect } from "./ui/glowing-effect";
 
 export default function MetricsBar() {
   const metrics = [
     {
-      value: "4.2M+",
-      label: "Itineraries Orchestrated",
-      icon: <Route className="w-4 h-4 text-teal-400" />,
+      value: "~35–40%",
+      label: "Tool Latency Reduction",
+      sublabel: "max(21s, 8s, 3s) = ~21s vs ~32s sequential",
+      icon: <Zap className="w-4 h-4 text-teal-400" />,
     },
     {
-      value: "< 2.5s",
-      label: "Swarm Synthesis Latency",
-      icon: <Zap className="w-4 h-4 text-sky-400" />,
-    },
-    {
-      value: "180+",
-      label: "Global Carrier Networks",
-      icon: <Globe className="w-4 h-4 text-indigo-400" />,
-    },
-    {
-      value: "100%",
-      label: "Live Grounded Routes",
+      value: "< 0.5s",
+      label: "Guardrail & Prompt Security",
+      sublabel: "Prompt injection defense & early-exit",
       icon: <ShieldCheck className="w-4 h-4 text-emerald-400" />,
+    },
+    {
+      value: "0.0s",
+      label: "Tool Time for Follow-ups",
+      sublabel: "Dual Memory (PostgresSaver + Store)",
+      icon: <Clock className="w-4 h-4 text-sky-400" />,
+    },
+    {
+      value: "6 / 3",
+      label: "LLM Calls: Full Plan / Follow-up",
+      sublabel: "Hotel uses 0 LLM (Tavily MCP only)",
+      icon: <Database className="w-4 h-4 text-indigo-400" />,
     },
   ];
 
@@ -47,13 +51,14 @@ export default function MetricsBar() {
                 key={idx}
                 className="flex flex-col items-center text-center p-3 sm:border-r last:border-r-0 border-white/6"
               >
-                <div className="flex items-center gap-1.5 mb-1.5">
+                <div className="flex items-center gap-1.5 mb-1">
                   {m.icon}
-                  <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
+                  <span className="text-xl sm:text-2xl font-bold text-white tracking-normal">
                     {m.value}
                   </span>
                 </div>
-                <span className="text-xs text-white/45 font-medium">{m.label}</span>
+                <span className="text-xs text-white/70 font-medium">{m.label}</span>
+                <span className="text-[10px] text-white/45 font-medium mt-0.5">{m.sublabel}</span>
               </div>
             ))}
           </div>

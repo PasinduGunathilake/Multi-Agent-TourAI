@@ -339,6 +339,7 @@ async def plan_stream(payload: TravelRequest):
                 "flight_results": accumulated_state.get("flight_results", ""),
                 "hotel_results": accumulated_state.get("hotel_results", ""),
                 "weather_results": accumulated_state.get("weather_results", ""),
+                "maps_results": accumulated_state.get("maps_results", ""),
                 "itinerary": accumulated_state.get("itinerary", ""),
                 "llm_calls": accumulated_state.get("llm_calls", 0),
             }
@@ -439,6 +440,7 @@ async def resume_stream(payload: ResumeRequest):
                 "flight_results": accumulated_state.get("flight_results", ""),
                 "hotel_results": accumulated_state.get("hotel_results", ""),
                 "weather_results": accumulated_state.get("weather_results", ""),
+                "maps_results": accumulated_state.get("maps_results", ""),
                 "itinerary": accumulated_state.get("itinerary", ""),
                 "llm_calls": accumulated_state.get("llm_calls", 0),
             }

@@ -7,6 +7,7 @@ from Multi_Agent_TourAI.agents.flight_agent import flight_agent
 from Multi_Agent_TourAI.agents.hotel_agent import hotel_agent
 from Multi_Agent_TourAI.agents.itinerary_agent import itinerary_agent
 from Multi_Agent_TourAI.agents.weather_agent import weather_agent
+from Multi_Agent_TourAI.agents.maps_agent import maps_agent
 from Multi_Agent_TourAI.agents.final_agent import final_response_agent
 from Multi_Agent_TourAI.memory.checkpointer import get_checkpointer
 from Multi_Agent_TourAI.memory.store import get_store
@@ -30,10 +31,11 @@ graph.add_node("guardrail_blocked", guardrail_blocked)
 graph.add_node("supervisor", supervisor_agent)
 # Add HITL node to the graph
 graph.add_node("human_approval", human_approval_agent)
-# Add all 5 agent nodes to the graph
+# Add all 6 agent nodes to the graph
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
 graph.add_node("weather_agent", weather_agent)
+graph.add_node("maps_agent", maps_agent)
 graph.add_node("itinerary_agent", itinerary_agent)
 graph.add_node("final_agent", final_response_agent)
 
@@ -82,6 +84,7 @@ graph.add_edge("final_agent", END)
               │  │  • flight    │                       │  • flight    │                         │
               │  │  • hotel     │                       │  • hotel     │                         │
               │  │  • weather   │                       │  • weather   │                         │
+              │  │  • maps      │                       │  • maps      │                         │
               │  └──────┬───────┘                       └──────┬───────┘                         │
               │         │                                      │                                 │
               │         │ [new_plan]                           │ [specific_query]                │
@@ -114,18 +117,18 @@ graph.add_edge("final_agent", END)
 WHY WE USE THIS DYNAMIC PARALLEL & INTENT-AWARE PIPELINE:
 
 1. Data Independence & Parallel Latency Reduction (Fan-Out):
-   - Flight, Hotel, and Weather agents are completely INDEPENDENT of each other.
+   - Flight, Hotel, Weather, and Maps agents are completely INDEPENDENT of each other.
    - They only need the destination city from the user query (e.g. 'Dubai').
-   - Hotel Agent does not need Flight data to search hotels, and Weather Agent does not need Hotel data.
+   - Hotel Agent does not need Flight data to search hotels, and Weather/Maps Agents do not need Hotel data.
    - Running them concurrently allows the slowest branch to dictate tool latency rather than 
      their cumulative sum:
-        T_sequential = T_flight (~21s) + T_hotel (~8s) + T_weather (~3s) = ~32s
-        T_parallel   = max(T_flight, T_hotel, T_weather) = max(21s, 8s, 3s) = ~21s
-     -> Yields an immediate ~35% - 40% reduction in external tool wait time!
+        T_sequential = T_flight (~21s) + T_hotel (~8s) + T_weather (~3s) + T_maps (~2s) = ~34s
+        T_parallel   = max(T_flight, T_hotel, T_weather, T_maps) = max(21s, 8s, 3s, 2s) = ~21s
+     -> Yields an immediate ~38% - 40% reduction in external tool wait time!
 
 2. Data Dependency & Synchronization (Fan-In):
-   - Only the Itinerary Agent depends on the outputs of all three (flights, hotels, and weather)
-     to build a realistic day-by-day plan.
+   - Only the Itinerary Agent depends on the outputs of all four (flights, hotels, weather, and maps)
+     to build a realistic, geographically clustered day-by-day plan.
    - Hence, for full vacation plans, Itinerary Agent acts as a barrier that waits until all 
      selected parallel agents finish before executing.
 
@@ -158,7 +161,7 @@ graph.add_edge(START, "input_guardrail")
 def route_after_guardrail(state: TravelState):
     """
     Evaluates whether the user request is allowed by the input guardrail.
-    - If allowed: triggers the 3 parallel agents (flight, hotel, weather).
+    - If allowed: triggers the 4 parallel agents (flight, hotel, weather, maps).
     - If blocked: routes directly to the guardrail_blocked terminal node.
     """
     if state.get("guardrail_allowed", True):
@@ -195,13 +198,13 @@ def route_from_supervisor(state: TravelState):
 
     # if Travel plan -> parallel....
     logger.info("Supervisor routed: Full Travel Plan -> Running parallel tool agents.")
-    return ["flight_agent", "hotel_agent", "weather_agent"]
+    return ["flight_agent", "hotel_agent", "weather_agent", "maps_agent"]
 
 # Supervisor Possible Target Nodes
 graph.add_conditional_edges(
     "supervisor",
     route_from_supervisor,
-    ["flight_agent", "hotel_agent", "weather_agent", "itinerary_agent", "final_agent"],
+    ["flight_agent", "hotel_agent", "weather_agent", "maps_agent", "itinerary_agent", "final_agent"],
 )
 
 # Route after specialist tool:
@@ -233,6 +236,12 @@ graph.add_conditional_edges(
     route_after_tool,
     {"itinerary_agent": "itinerary_agent", "final_agent": "final_agent"},
 )
+graph.add_conditional_edges(
+    "maps_agent",
+    route_after_tool,
+    {"itinerary_agent": "itinerary_agent", "final_agent": "final_agent"},
+)
+
 
 # Sequential flow: Itinerary Agent -> Human Approval Agent -> Final Response Agent -> END
 graph.add_edge("itinerary_agent", "human_approval")
@@ -290,6 +299,7 @@ def _serialize_workflow_result(result: dict, thread_id: str, user_id: str) -> di
         "flight_results": result.get("flight_results", ""),
         "hotel_results": result.get("hotel_results", ""),
         "weather_results": result.get("weather_results", ""),
+        "maps_results": result.get("maps_results", ""),
         "itinerary": (
             interrupt_payload.get("draft_itinerary", "")
             if interrupt_payload
@@ -349,6 +359,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
             "flight_results": "",
             "hotel_results": "",
             "weather_results": "",
+            "maps_results": "",
             "itinerary": "",
             "approval_request": "",
             "approved": False,

@@ -25,6 +25,9 @@ class TravelState(TypedDict):
     
     # Output from weather_agent (FastMCP OpenWeatherMap)
     weather_results: str
+
+    # Output from maps_agent (Geoapify Remote MCP Sights, Dining & Routes)
+    maps_results: str
     
     # Counter for total LLM calls across the workflow
     llm_calls: Annotated[int, operator.add]  # values are summed up automatically using operator.add

@@ -52,6 +52,7 @@ class TravelResponse(BaseModel):
     flight_results: str | None = ""
     hotel_results: str | None = ""
     weather_results: str | None = ""
+    maps_results: str | None = ""
     itinerary: str | None = ""
     approved: bool | None = None
     human_feedback: str | None = ""
@@ -116,6 +117,7 @@ async def get_thread_history(thread_id: str):
         flight_results = state_values.get("flight_results", "")
         hotel_results = state_values.get("hotel_results", "")
         weather_results = state_values.get("weather_results", "")
+        maps_results = state_values.get("maps_results", "")
         itinerary = state_values.get("itinerary", "")
         llm_calls = state_values.get("llm_calls", 4)
 
@@ -146,6 +148,7 @@ async def get_thread_history(thread_id: str):
                     "flightData": flight_results if i == len(messages) - 1 else None,
                     "hotelData": hotel_results if i == len(messages) - 1 else None,
                     "weatherData": weather_results if i == len(messages) - 1 else None,
+                    "mapsData": maps_results if i == len(messages) - 1 else None,
                     "itineraryData": itinerary if i == len(messages) - 1 else None,
                     "llmCalls": llm_calls,
                     "timestamp": "Saved Journey",
@@ -210,6 +213,7 @@ async def plan_stream(payload: TravelRequest):
             "flight_results": "",
             "hotel_results": "",
             "weather_results": "",
+            "maps_results": "",
             "itinerary": "",
             "llm_calls": 0,
         }
@@ -241,6 +245,7 @@ async def plan_stream(payload: TravelRequest):
                             "flight_results": accumulated_state.get("flight_results", ""),
                             "hotel_results": accumulated_state.get("hotel_results", ""),
                             "weather_results": accumulated_state.get("weather_results", ""),
+                            "maps_results": accumulated_state.get("maps_results", ""),
                             "llm_calls": accumulated_state.get("llm_calls", 0),
                         }
                         yield f"data: {json.dumps(approval_payload)}\n\n"
@@ -261,6 +266,7 @@ async def plan_stream(payload: TravelRequest):
                         "flight_results": accumulated_state.get("flight_results", ""),
                         "hotel_results": accumulated_state.get("hotel_results", ""),
                         "weather_results": accumulated_state.get("weather_results", ""),
+                        "maps_results": accumulated_state.get("maps_results", ""),
                         "itinerary": accumulated_state.get("itinerary", ""),
                         "llm_calls": accumulated_state.get("llm_calls", 0),
                     }

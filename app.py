@@ -98,6 +98,82 @@ async def resume(payload: ResumeRequest):
         logger.error(f"Error resuming workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/history/{thread_id}")
+async def get_thread_history(thread_id: str):
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "user_id": "default_user",
+        }
+    }
+    try:
+        checkpoint_state = travel_graph.get_state(config)
+        if not checkpoint_state or not checkpoint_state.values:
+            return {"turns": [], "thread_id": thread_id}
+
+        state_values = dict(checkpoint_state.values)
+        messages = state_values.get("messages", [])
+        flight_results = state_values.get("flight_results", "")
+        hotel_results = state_values.get("hotel_results", "")
+        weather_results = state_values.get("weather_results", "")
+        itinerary = state_values.get("itinerary", "")
+        llm_calls = state_values.get("llm_calls", 4)
+
+        turns = []
+        for i, msg in enumerate(messages):
+            msg_type = getattr(msg, "type", "")
+            raw_content = getattr(msg, "content", "")
+            if isinstance(raw_content, list):
+                text_content = "".join(
+                    p if isinstance(p, str) else p.get("text", str(p))
+                    for p in raw_content
+                )
+            else:
+                text_content = str(raw_content or "")
+
+            if msg_type in ("human", "user"):
+                turns.append({
+                    "id": f"turn_user_{i}",
+                    "role": "user",
+                    "userContent": text_content,
+                    "timestamp": "Saved Journey",
+                })
+            elif msg_type in ("ai", "assistant"):
+                turns.append({
+                    "id": f"turn_assistant_{i}",
+                    "role": "assistant",
+                    "planResult": text_content,
+                    "flightData": flight_results if i == len(messages) - 1 else None,
+                    "hotelData": hotel_results if i == len(messages) - 1 else None,
+                    "weatherData": weather_results if i == len(messages) - 1 else None,
+                    "itineraryData": itinerary if i == len(messages) - 1 else None,
+                    "llmCalls": llm_calls,
+                    "timestamp": "Saved Journey",
+                    "isStreaming": False,
+                })
+
+        return {"turns": turns, "thread_id": thread_id}
+    except Exception as e:
+        logger.warning(f"Could not load thread history for {thread_id}: {e}")
+        return {"turns": [], "thread_id": thread_id}
+
+@app.delete("/api/session/{thread_id}")
+async def delete_session(thread_id: str):
+    """
+    Deletes all LangGraph checkpoints and cached state from PostgreSQL for the given thread_id.
+    """
+    from Multi_Agent_TourAI.memory.checkpointer import delete_thread_checkpoints
+    try:
+        success = delete_thread_checkpoints(thread_id)
+        if success:
+            logger.info(f"Successfully deleted checkpoints for thread: {thread_id}")
+            return {"status": "deleted", "thread_id": thread_id}
+        else:
+            return {"status": "not_found_or_failed", "thread_id": thread_id}
+    except Exception as e:
+        logger.error(f"Error deleting session {thread_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Real-time Server-Sent Events (SSE) Streaming Endpoint
 @app.post("/api/plan/stream")
 async def plan_stream(payload: TravelRequest):

@@ -60,8 +60,24 @@ def get_checkpointer() -> PostgresSaver:
     return checkpointer
 
 
-
-
+def delete_thread_checkpoints(thread_id: str) -> bool:
+    """
+    Deletes all LangGraph checkpoints associated with a given thread_id from PostgreSQL.
+    """
+    if not thread_id:
+        return False
+    database_url = get_databaseUrl()
+    try:
+        with psycopg.connect(database_url, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,))
+                cur.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,))
+                cur.execute("DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,))
+                logger.info(f"Purged all checkpoints for thread_id='{thread_id}' from PostgreSQL.")
+                return True
+    except Exception as e:
+        logger.error(f"Failed to delete checkpoints for thread_id='{thread_id}': {e}", exc_info=True)
+        return False
 # In LangGraph, PostgresSaver acts as both Short-Term Memory and a Durable State Cache:
 #
 # 1. Thread-Level Short-Term Memory:

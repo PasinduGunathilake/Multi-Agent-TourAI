@@ -61,30 +61,53 @@ def _parse_mcp_response(res) -> dict | list | str:
     return res
 
 
-async def geoapify_mcp_geocode(query: str) -> dict | None:
+async def geoapify_mcp_geocode(query: str, is_city: bool = False) -> dict | None:
     """
     Geocodes a free-text location/city into coordinates using Geoapify MCP (or REST fallback).
     """
     if not GEOAPIFY_API_KEY:
         logger.warning("GEOAPIFY_API_KEY is not set.")
         return None
-    # Try MCP first
+
+    # For city destinations, query with type=city to ensure exact city matching (e.g. Paris, France vs a church named Parish)
+    if is_city:
+        try:
+            url = "https://api.geoapify.com/v1/geocode/search"
+            resp = requests.get(url, params={"text": query, "type": "city", "limit": 1, "apiKey": GEOAPIFY_API_KEY}, timeout=8)
+            if resp.status_code == 200:
+                features = resp.json().get("features", [])
+                if features:
+                    props = features[0].get("properties", {})
+                    return {
+                        "lat": props.get("lat"),
+                        "lon": props.get("lon"),
+                        "formatted": props.get("formatted", query),
+                        "city": props.get("city", query),
+                        "country": props.get("country", ""),
+                    }
+        except Exception as e:
+            logger.warning(f"Geoapify city geocode failed, falling back to general MCP: {e}")
+
+    # General geocode via MCP
     try:
         tools = await init_geoapify_tools()
         if "geocode_address" in tools:
-            res = await tools["geocode_address"].ainvoke({"query": query, "limit": 1})
+            res = await tools["geocode_address"].ainvoke({"query": query, "limit": 3})
             data = _parse_mcp_response(res)
             if isinstance(data, dict) and "results" in data and len(data["results"]) > 0:
-                item = data["results"][0]
+                items = data["results"]
+                # Prefer city match if looking for a city
+                best_item = next((it for it in items if it.get("result_type") == "city"), items[0]) if is_city else items[0]
                 return {
-                    "lat": item.get("lat"),
-                    "lon": item.get("lon"),
-                    "formatted": item.get("formatted", query),
-                    "city": item.get("city", query),
-                    "country": item.get("country", ""),
+                    "lat": best_item.get("lat"),
+                    "lon": best_item.get("lon"),
+                    "formatted": best_item.get("formatted", query),
+                    "city": best_item.get("city", query),
+                    "country": best_item.get("country", ""),
                 }
     except Exception as e:
         logger.warning(f"Geoapify MCP geocode failed, falling back to REST: {e}")
+
     # Fallback to direct REST API
     try:
         url = "https://api.geoapify.com/v1/geocode/search"
@@ -102,7 +125,10 @@ async def geoapify_mcp_geocode(query: str) -> dict | None:
                 }
     except Exception as e:
         logger.error(f"Geoapify REST geocode fallback failed: {e}")
+
     return None
+
+
 async def geoapify_mcp_search_places(city: str, category: str = "tourism.sights", limit: int = 5) -> str:
     """
     Finds places by category (tourism.sights, catering.cafe, catering.restaurant, etc.)
@@ -110,8 +136,9 @@ async def geoapify_mcp_search_places(city: str, category: str = "tourism.sights"
     """
     if not GEOAPIFY_API_KEY:
         return "Geoapify API key not configured."
+
     # Step 1: Geocode city to coordinates
-    loc = await geoapify_mcp_geocode(city)
+    loc = await geoapify_mcp_geocode(city, is_city=True)
     if not loc or not loc.get("lat") or not loc.get("lon"):
         return f"Could not determine coordinates for destination '{city}'."
     lat = loc["lat"]

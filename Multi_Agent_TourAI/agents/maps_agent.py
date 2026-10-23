@@ -48,8 +48,19 @@ def maps_agent(state: TravelState):
                 parts = [p.strip() for p in route_resp.split("|")]
                 if len(parts) >= 2:
                     origin, destination = parts[0], parts[1]
-                    logger.info(f"Maps Agent: Calculating route from '{origin}' to '{destination}'...")
-                    maps_data = asyncio.run(geoapify_mcp_calculate_route(origin, destination))
+                    # Append city context if available to avoid ambiguous geocoding (e.g. Colosseum in Rome)
+                    origin_query = f"{origin}, {city}" if city and city.lower() not in origin.lower() else origin
+                    dest_query = f"{destination}, {city}" if city and city.lower() not in destination.lower() else destination
+
+                    # Detect travel mode (walk, transit, or default drive)
+                    mode = "drive"
+                    if any(m in query_lower for m in ["walk", "foot", "hiking", "pedestrian"]):
+                        mode = "walk"
+                    elif any(m in query_lower for m in ["transit", "train", "metro", "bus", "subway"]):
+                        mode = "transit"
+
+                    logger.info(f"Maps Agent: Calculating route from '{origin_query}' to '{dest_query}' via {mode}...")
+                    maps_data = asyncio.run(geoapify_mcp_calculate_route(origin_query, dest_query, mode=mode))
 
         # Case 2: Food / Dining / Cafe specific query
         if not maps_data:

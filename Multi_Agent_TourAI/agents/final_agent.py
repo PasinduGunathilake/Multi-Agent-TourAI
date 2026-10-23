@@ -1,10 +1,7 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from Multi_Agent_TourAI.graph.state import TravelState
 from Multi_Agent_TourAI.llms.llm import smart_llm
-from Multi_Agent_TourAI.config.prompts import (
-    FINAL_RESPONSE_SYSTEM_PROMPT,
-    FINAL_RESPONSE_PROMPT_TEMPLATE,
-)
+from Multi_Agent_TourAI.config.prompts import (FINAL_RESPONSE_SYSTEM_PROMPT, FINAL_RESPONSE_PROMPT_TEMPLATE,)
 from Multi_Agent_TourAI.utils import get_logger, log_execution
 
 # Set up logging for this agent
@@ -30,6 +27,8 @@ def final_response_agent(state: TravelState):
         flight_info = state.get("flight_results", "")
         hotel_info = state.get("hotel_results", "")
         weather_info = state.get("weather_results", "")
+        maps_info = state.get("maps_results", "")
+
 
         system_instruction = (
             "You are an expert AI Travel Assistant. The traveler is asking a follow-up question, "
@@ -38,6 +37,7 @@ def final_response_agent(state: TravelState):
             f"=== EXISTING ITINERARY ===\n{existing_itinerary}\n\n"
             f"=== FLIGHT DETAILS ===\n{flight_info}\n\n"
             f"=== HOTEL DETAILS ===\n{hotel_info}\n\n"
+            f"=== ATTRACTIONS & MAP DETAILS ===\n{maps_info}\n\n"
             f"=== WEATHER DETAILS ===\n{weather_info}\n\n"
             "Answer the traveler's question directly, clearly, and concisely using the above context."
         )
@@ -69,6 +69,7 @@ def final_response_agent(state: TravelState):
             f"Collected Flight Data: {state.get('flight_results', 'None')}\n"
             f"Collected Hotel Data: {state.get('hotel_results', 'None')}\n"
             f"Collected Weather Data: {state.get('weather_results', 'None')}\n"
+            f"Collected Maps/Attractions Data: {state.get('maps_results', 'None')}\n"
             f"Collected Itinerary Data: {state.get('itinerary', 'None')}\n\n"
             "Provide a helpful, nicely formatted answer addressing ONLY the user's specific request. "
             "Do not include empty sections for services the user did not ask for."

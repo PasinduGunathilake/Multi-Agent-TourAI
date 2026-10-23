@@ -19,6 +19,7 @@ list_of_dirnfiles = [
     f"{project_name}/agents/itinerary_agent.py",
     f"{project_name}/agents/flight_agent.py",
     f"{project_name}/agents/hotel_agent.py",
+    f"{project_name}/agents/maps_agent.py",
     f"{project_name}/agents/final_agent.py",
     f"{project_name}/agents/weather_agent.py",
     f"{project_name}/agents/supervisor_agent.py",
@@ -34,6 +35,7 @@ list_of_dirnfiles = [
     f"{project_name}/mcp/aviationstack_mcp.py",
     f"{project_name}/mcp/tavily_mcp.py",
     f"{project_name}/mcp/weather_mcp.py",
+    f"{project_name}/mcp/geoapify_mcp.py",
 
     # tools module (API)
     f"{project_name}/tools/__init__.py",

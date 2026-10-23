@@ -143,6 +143,7 @@ Format the final answer beautifully using these sections:
 
 Important:
 - Be clear and practical.
+- If presenting structured data in tables (such as Travel Overview, Hotel Suggestions, Weather Forecast), use valid GitHub Flavored Markdown tables. Each table row MUST be on its own separate line with newlines between rows (never concatenate multiple table rows on the same line).
 - Mention that live flight API may not provide ticket prices if pricing is unavailable.
 - Use the real-time weather and forecast data to advise on what clothes to pack and best times for outdoor activities.
 - Keep the response useful for real travel planning.

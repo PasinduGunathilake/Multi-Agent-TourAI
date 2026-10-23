@@ -10,7 +10,7 @@ export default function MetricsBar() {
     {
       value: "~35–40%",
       label: "Tool Latency Reduction",
-      sublabel: "max(21s, 8s, 3s) = ~21s vs ~32s sequential",
+      sublabel: "max(21s, 8s, 3s, 2s) = ~21s vs ~35s sequential",
       icon: <Zap className="w-4 h-4 text-teal-400" />,
     },
     {
@@ -28,7 +28,7 @@ export default function MetricsBar() {
     {
       value: "6 / 3",
       label: "LLM Calls: Full Plan / Follow-up",
-      sublabel: "Hotel uses 0 LLM (Tavily MCP only)",
+      sublabel: "Hotel & Maps use 0 LLM (MCP only)",
       icon: <Database className="w-4 h-4 text-indigo-400" />,
     },
   ];

@@ -32,6 +32,7 @@ export interface ChatTurn {
   flightData?: string;
   hotelData?: string;
   weatherData?: string;
+  mapsData?: string;
   itineraryData?: string;
   llmCalls?: number;
 }
@@ -57,6 +58,7 @@ export default function AgentTurnContainer({ turn, onApprove, onRevise }: AgentT
     flightAgent: "idle",
     hotelAgent: "idle",
     weatherAgent: "idle",
+    mapsAgent: "idle",
     itineraryAgent: "idle",
     finalAgent: "idle",
     currentAgent: "Researching...",
@@ -99,6 +101,7 @@ export default function AgentTurnContainer({ turn, onApprove, onRevise }: AgentT
             flightData={turn.flightData}
             hotelData={turn.hotelData}
             weatherData={turn.weatherData}
+            mapsData={turn.mapsData}
             itineraryData={turn.itineraryData}
             llmCalls={turn.llmCalls}
             isStreaming={!!turn.isStreaming}

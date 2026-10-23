@@ -15,6 +15,7 @@ import {
   Hotel,
   CloudSun,
   MapPin,
+  Compass,
 } from "lucide-react";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -42,6 +43,7 @@ interface TravelResultsViewProps {
   flightData?: string;
   hotelData?: string;
   weatherData?: string;
+  mapsData?: string;
   itineraryData?: string;
   llmCalls?: number;
   isStreaming?: boolean;
@@ -53,6 +55,7 @@ export default function TravelResultsView({
   flightData,
   hotelData,
   weatherData,
+  mapsData,
   itineraryData,
   llmCalls = 4,
   isStreaming = false,
@@ -77,7 +80,7 @@ export default function TravelResultsView({
     }
   };
 
-  const hasAgentArtifacts = Boolean(flightData || hotelData || weatherData || itineraryData);
+  const hasAgentArtifacts = Boolean(flightData || hotelData || weatherData || mapsData || itineraryData);
 
   return (
     <div className="w-full max-w-3xl mx-auto my-3 text-left transition-all">
@@ -294,6 +297,18 @@ export default function TravelResultsView({
                   </div>
                   <pre className="text-xs text-neutral-400 whitespace-pre-wrap font-sans">
                     {weatherData}
+                  </pre>
+                </div>
+              )}
+
+              {mapsData && (
+                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 mb-1">
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>Maps &amp; Places Agent Feed (Geoapify Remote MCP)</span>
+                  </div>
+                  <pre className="text-xs text-neutral-400 whitespace-pre-wrap font-sans">
+                    {mapsData}
                   </pre>
                 </div>
               )}

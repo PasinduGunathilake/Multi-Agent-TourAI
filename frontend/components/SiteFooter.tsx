@@ -22,7 +22,7 @@ export default function SiteFooter() {
       { label: "Groq LPU Inference", desc: "gpt-oss-120b & 20b" },
       { label: "Google Gemini", desc: "Cross-provider failover" },
       { label: "PostgreSQL & Supabase", desc: "Dual memory checkpointing" },
-      { label: "MCP Tool Connectors", desc: "AviationStack & Tavily" },
+      { label: "MCP Tool Connectors", desc: "AviationStack, Tavily, OpenWeather & Geoapify" },
     ],
     developer: [
       { label: "GitHub Repository", href: "https://github.com/PasinduGunathilake/Multi-Agent-TourAI", isExternal: true },
@@ -136,7 +136,7 @@ export default function SiteFooter() {
         {/* Bottom Micro Bar */}
         <div className="pt-6 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/40">
           <div>
-            © {new Date().getFullYear()} TourAI. Multi-Agent AI System. All rights reserved.
+            © 2026 TourAI. Multi-Agent AI System. All rights reserved.
           </div>
           <div className="text-[11px] font-medium text-white/35 flex items-center gap-3">
             <span>LangGraph</span>

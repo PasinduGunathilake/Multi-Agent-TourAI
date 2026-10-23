@@ -20,6 +20,7 @@ import {
   Sparkles,
   Brain,
   CheckCircle2,
+  Compass,
 } from "lucide-react";
 
 interface ReasoningTraceProps {
@@ -50,7 +51,7 @@ export default function ReasoningTrace({
   }, [running]);
 
   const durationSec = elapsedMs > 0 ? (elapsedMs / 1000).toFixed(1) : "0.0";
-  const stepCount = intent === "follow_up" ? 3 : 5;
+  const stepCount = intent === "follow_up" ? 3 : 6;
 
   return (
     <ChainOfThought open={open} onOpenChange={setOpen}>
@@ -101,7 +102,7 @@ export default function ReasoningTrace({
               ? "Detected follow-up inquiry → bypassed external APIs and retrieved PostgreSQL memory"
               : intent === "specific_query"
               ? "Detected targeted query → bypassed full itinerary and dispatched specialist tool"
-              : "Detected new trip query → deployed parallel flight, hotel, and weather worker swarm"
+              : "Detected new trip query → deployed parallel flight, hotel, weather, and maps worker swarm"
           }
         />
 
@@ -136,6 +137,16 @@ export default function ReasoningTrace({
               description="Analyzed seasonal rainfall probabilities and daily temperature bands"
             >
               <ChainOfThoughtSearchResults results={["openweathermap.org", "fastmcp-protocol"]} />
+            </ChainOfThoughtStep>
+
+            {/* Step 5b: Maps Agent */}
+            <ChainOfThoughtStep
+              status={status.mapsAgent === "running" ? "running" : undefined}
+              icon={<Compass className="w-3.5 h-3.5 text-emerald-400" />}
+              title={status.mapsAgent === "done" ? "Mapped verified tourist attractions and travel corridors" : "Locating sights & routes on Geoapify Remote MCP…"}
+              description="Located verified attractions, local dining spots, and calculated travel distances"
+            >
+              <ChainOfThoughtSearchResults results={["geoapify.com", "mcp-jsonrpc"]} />
             </ChainOfThoughtStep>
           </>
         )}

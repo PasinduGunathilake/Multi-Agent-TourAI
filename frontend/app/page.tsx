@@ -39,6 +39,7 @@ const defaultAgentStatus = () => ({
   flightAgent: "idle" as const,
   hotelAgent: "idle" as const,
   weatherAgent: "idle" as const,
+  mapsAgent: "idle" as const,
   itineraryAgent: "idle" as const,
   finalAgent: "idle" as const,
   currentAgent: "Initialising...",
@@ -307,7 +308,8 @@ export default function HomePage() {
                   flightAgent: "running",
                   hotelAgent: "running",
                   weatherAgent: "running",
-                  currentAgent: "Fan-Out: Parallel Flight, Hotel & Weather Agents...",
+                  mapsAgent: "running",
+                  currentAgent: "Fan-Out: Parallel Flight, Hotel, Weather & Maps Agents...",
                   elapsedMs: Date.now() - startTime,
                 },
               });
@@ -356,6 +358,13 @@ export default function HomePage() {
                       ...t,
                       weatherData: ev.weather_results || t.weatherData,
                       agentStatus: { ...s, weatherAgent: "done", elapsedMs: elapsed },
+                    };
+                  }
+                  if (ev.node === "maps_agent") {
+                    return {
+                      ...t,
+                      mapsData: ev.maps_results || t.mapsData,
+                      agentStatus: { ...s, mapsAgent: "done", elapsedMs: elapsed },
                     };
                   }
                   if (ev.node === "itinerary_agent") {
@@ -409,10 +418,15 @@ export default function HomePage() {
                 flightData: ev.flight_results || undefined,
                 hotelData: ev.hotel_results || undefined,
                 weatherData: ev.weather_results || undefined,
+                mapsData: ev.maps_results || undefined,
                 isStreaming: false,
                 agentStatus: {
                   ...defaultAgentStatus(),
                   step: 2,
+                  flightAgent: "done",
+                  hotelAgent: "done",
+                  weatherAgent: "done",
+                  mapsAgent: "done",
                   itineraryAgent: "done",
                   currentAgent: "⏸ Awaiting your approval...",
                   elapsedMs: Date.now() - startTime,
@@ -430,6 +444,7 @@ export default function HomePage() {
                 flightData: ev.flight_results || undefined,
                 hotelData: ev.hotel_results || undefined,
                 weatherData: ev.weather_results || undefined,
+                mapsData: ev.maps_results || undefined,
                 itineraryData: ev.itinerary || undefined,
                 llmCalls: ev.llm_calls,
                 agentStatus: {
@@ -437,6 +452,7 @@ export default function HomePage() {
                   flightAgent: "done",
                   hotelAgent: "done",
                   weatherAgent: "done",
+                  mapsAgent: "done",
                   itineraryAgent: "done",
                   finalAgent: "done",
                   currentAgent: "Complete",
@@ -536,6 +552,7 @@ export default function HomePage() {
                 flightData: ev.flight_results || undefined,
                 hotelData: ev.hotel_results || undefined,
                 weatherData: ev.weather_results || undefined,
+                mapsData: ev.maps_results || undefined,
                 itineraryData: ev.itinerary || undefined,
                 llmCalls: ev.llm_calls,
               });

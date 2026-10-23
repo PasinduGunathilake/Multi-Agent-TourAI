@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, ArrowUp, Sparkles, Plane, Hotel, Map, CloudSun } from "lucide-react";
+import { Plus, ArrowUp, Sparkles, Plane, Hotel, Map, CloudSun, Compass } from "lucide-react";
 import { GlowingEffect } from "@/components/ui/glowing-effect";
 
 interface ChatInputProps {
@@ -19,10 +19,11 @@ export default function ChatInput({
   const [selectedMode, setSelectedMode] = useState("all");
 
   const modes = [
-    { id: "all", label: "Fan-Out Swarm (5 Agents)", icon: <Sparkles className="w-3.5 h-3.5" /> },
+    { id: "all", label: "Fan-Out Swarm (6 Agents)", icon: <Sparkles className="w-3.5 h-3.5" /> },
     { id: "flights", label: "Live Flights (AviationStack)", icon: <Plane className="w-3.5 h-3.5" /> },
     { id: "hotels", label: "Boutique Hotels (Tavily)", icon: <Hotel className="w-3.5 h-3.5" /> },
     { id: "weather", label: "Live Weather (FastMCP)", icon: <CloudSun className="w-3.5 h-3.5" /> },
+    { id: "maps", label: "Attractions & Routes (Geoapify)", icon: <Compass className="w-3.5 h-3.5" /> },
     { id: "itinerary", label: "Curated Itinerary", icon: <Map className="w-3.5 h-3.5" /> },
   ];
 
@@ -63,7 +64,7 @@ export default function ChatInput({
           {/* Plus / Add context icon */}
           <button
             type="button"
-            onClick={() => alert("Multi-Agent Settings: AviationStack (Live Flights) + Tavily (Hotels) Active")}
+            onClick={() => alert("Multi-Agent Settings: AviationStack (Flights) + Tavily (Hotels) + OpenWeather (Weather) + Geoapify (Maps) Active")}
             className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
             title="Swarm Context"
           >

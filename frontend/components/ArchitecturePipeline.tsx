@@ -17,6 +17,7 @@ import {
   CloudSun,
   MapPin,
   FileCheck,
+  Compass,
 } from "lucide-react";
 import ScrollReveal from "./ScrollReveal";
 import { GlowingEffect } from "./ui/glowing-effect";
@@ -48,11 +49,11 @@ export default function ArchitecturePipeline() {
     {
       num: "03",
       title: "Parallel Swarm",
-      subtitle: "35–40% faster (~32s → ~21s)",
-      desc: "Flights (5 MCP calls), Hotels (Tavily search, 0 LLM), and Weather (2 MCP calls) run simultaneously. Slowest branch finishes in ~21s vs ~32s.",
+      subtitle: "35–40% faster (~35s → ~21s)",
+      desc: "Flights (5 MCP calls), Hotels (Tavily search, 0 LLM), Weather (2 MCP calls), and Maps (Geoapify Remote MCP, 0 LLM) run simultaneously. Slowest branch finishes in ~21s vs ~35s.",
       icon: <Zap className="w-5 h-5 text-teal-400" />,
       tag: "fan_out_swarm",
-      stat: "🚀 ~21s parallel vs ~32s",
+      stat: "🚀 ~21s parallel vs ~35s",
       badgeColor: "border-teal-500/25 bg-teal-500/10 text-teal-400",
     },
     {
@@ -110,9 +111,6 @@ export default function ArchitecturePipeline() {
                   <div className="text-xs font-mono uppercase tracking-wider text-teal-400 mb-1 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
                     Interactive Execution Path Visualizer
-                  </div>
-                  <div className="text-sm text-white/70">
-                    Select an intent to trace its live path through <code className="text-white font-mono text-xs">workflow.py</code>:
                   </div>
                 </div>
 
@@ -204,8 +202,11 @@ export default function ArchitecturePipeline() {
                       <div className="flex items-center gap-1 text-cyan-300 font-sans text-[10px]">
                         <CloudSun className="w-3 h-3 shrink-0" /> Weather - 2 MCP calls + 1 LLM (~3s)
                       </div>
+                      <div className="flex items-center gap-1 text-emerald-300 font-sans text-[10px]">
+                        <Compass className="w-3 h-3 shrink-0" /> Maps - Geoapify Remote MCP (~1-2s)
+                      </div>
                       <div className="text-[10px] text-teal-400/70 pt-1">
-                        Parallel: max(21s, 8s, 3s) = ~21s
+                        Parallel: max(21s, 8s, 3s, 2s) = ~21s
                       </div>
                     </div>
                   )}

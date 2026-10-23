@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   GitBranch,
   UserCheck,
+  Compass,
 } from "lucide-react";
 
 export interface AgentStepStatus {
@@ -24,6 +25,7 @@ export interface AgentStepStatus {
   flightAgent: "idle" | "running" | "done";
   hotelAgent: "idle" | "running" | "done";
   weatherAgent?: "idle" | "running" | "done";
+  mapsAgent?: "idle" | "running" | "done";
   itineraryAgent: "idle" | "running" | "done";
   approvalStatus?: "idle" | "awaiting" | "approved" | "revised";
   finalAgent?: "idle" | "running" | "done";
@@ -72,6 +74,15 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
       bgClass: "bg-cyan-500/8 border-cyan-500/18",
       iconBg: "bg-cyan-500/12 border border-cyan-500/20 text-cyan-400",
     },
+    {
+      key: "mapsAgent" as const,
+      icon: <Compass className="w-4 h-4" />,
+      name: "Maps Agent",
+      detail: "Geoapify MCP · Sights & Routes",
+      accentColor: "#10b981",
+      bgClass: "bg-emerald-500/8 border-emerald-500/18",
+      iconBg: "bg-emerald-500/12 border border-emerald-500/20 text-emerald-400",
+    },
   ];
 
   // Fan-In Downstream Synthesis Agents
@@ -100,6 +111,7 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
     flightAgent: status.flightAgent,
     hotelAgent: status.hotelAgent,
     weatherAgent: status.weatherAgent || (status.flightAgent === "running" ? "running" : status.flightAgent === "done" ? "done" : "idle"),
+    mapsAgent: status.mapsAgent || (status.flightAgent === "running" ? "running" : status.flightAgent === "done" ? "done" : "idle"),
     itineraryAgent: status.itineraryAgent,
     finalAgent: status.finalAgent || (status.itineraryAgent === "done" ? "done" : status.itineraryAgent === "running" ? "running" : "idle"),
   };
@@ -161,13 +173,13 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
           <div className="flex items-center justify-between text-[11px] text-white/40 font-mono px-1">
             <span className="flex items-center gap-1.5 text-teal-400">
               <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
-              STAGE 1: Fan-Out Concurrency (3 Parallel MCP Threads)
+              STAGE 1: Fan-Out Concurrency (4 Parallel MCP Threads)
             </span>
             <span>~35%-40% Latency Reduction (max T)</span>
           </div>
 
-          {/* 3 Parallel Fan-Out Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* 4 Parallel Fan-Out Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {fanOutAgents.map((agent) => {
               const st = agentStatuses[agent.key];
               const cfg = statusConfig[st];
@@ -270,7 +282,7 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
                 <GitBranch className="w-2.5 h-2.5" /> supervisor
               </span>
               <span className="text-white/20">→</span>
-              <span className="px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-300">Fan-Out [3]</span>
+              <span className="px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-300">Fan-Out [4]</span>
               <span className="text-white/20">→</span>
               <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300">itinerary</span>
               <span className="text-white/20">→</span>

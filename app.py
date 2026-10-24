@@ -192,7 +192,13 @@ async def plan_stream(payload: TravelRequest):
         "configurable": {
             "thread_id": thread_id,
             "user_id": user_id,
-        }
+        },
+        "run_name": f"TourAI Plan: {user_query[:35]}",
+        "tags": ["tourai-swarm", "langgraph-agent"],
+        "metadata": {
+            "thread_id": thread_id,
+            "user_query": user_query,
+        },
     }
 
     # Check if this thread has prior state in the Postgres checkpointer
@@ -374,7 +380,9 @@ async def resume_stream(payload: ResumeRequest):
         "configurable": {
             "thread_id": thread_id,
             "user_id": user_id,
-        }
+        },
+        "run_name": f"TourAI Resume: {thread_id[:12]}",
+        "tags": ["tourai-hitl-resume"],
     }
 
     async def event_generator():

@@ -24,15 +24,23 @@ import { MessageFooter, MessageAction } from "@/components/ui/message";
 function cleanMarkdown(text: string): string {
   if (!text) return "";
 
-  // 1. Separate table rows if squashed on one line (e.g. "| col1 | col2 | | row1 | row2 |")
-  let cleaned = text.replace(/\|\s*\|\s*(?=[^|\n]+?\|)/g, "|\n| ");
-  cleaned = cleaned.replace(/\|\s*\|(?=[\s-:]+\|)/g, "|\n|");
+  // 1. Normalize line endings
+  let cleaned = text.replace(/\r\n/g, "\n");
 
-  // 2. Ensure blank line before any table block so CommonMark/GFM triggers parsing
-  cleaned = cleaned.replace(/([^\n])\n(\|)/g, "$1\n\n$2");
+  // 2. Separate squashed table rows if accidentally compressed (e.g. "| col1 | col2 | | row1 | row2 |")
+  cleaned = cleaned.replace(/\|\s*\|\s*(?=[^|\n]+?\|)/g, "|\n| ");
 
-  // 3. Ensure blank line after table block
-  cleaned = cleaned.replace(/(\|\n)([^\n|#])/g, "$1\n\n$2");
+  // 3. Remove any blank lines between table rows (blank lines break GFM table parsing)
+  cleaned = cleaned.replace(/(\|\s*)\n\s*\n+(\s*\|)/g, "$1\n$2");
+
+  // 4. Ensure a blank line BEFORE any table starts (only if preceded by a non-table line)
+  cleaned = cleaned.replace(/(^|[^\n|])\n(\s*\|[^\n]+\|)/gm, (match, p1, p2) => {
+    if (!p1 || p1.trim().startsWith("|")) return match;
+    return p1 + "\n\n" + p2;
+  });
+
+  // 5. Ensure a blank line AFTER the table ends (only if followed by a non-table line)
+  cleaned = cleaned.replace(/(\|\s*)\n([^\n|#\s])/g, "$1\n\n$2");
 
   return cleaned;
 }
@@ -156,35 +164,43 @@ export default function TravelResultsView({
                 {children}
               </code>
             ),
-            table: ({ children }) => (
-              <div className="my-5 w-full overflow-x-auto rounded-xl border border-white/10 bg-white/[0.02] shadow-sm">
-                <table className="w-full min-w-[500px] border-collapse text-left text-xs sm:text-sm">
+            table: ({ children, ...props }) => (
+              <div className="my-5 w-full overflow-x-auto rounded-xl border border-white/10 bg-white/[0.02] shadow-sm custom-scrollbar">
+                <table className="w-full border-collapse text-xs sm:text-sm" {...props}>
                   {children}
                 </table>
               </div>
             ),
-            thead: ({ children }) => (
-              <thead className="border-b border-white/10 bg-white/[0.05] text-[11px] font-semibold uppercase tracking-wider text-teal-300">
+            thead: ({ children, ...props }) => (
+              <thead className="border-b border-white/10 bg-white/[0.05] text-[11px] font-semibold uppercase tracking-wider text-teal-300" {...props}>
                 {children}
               </thead>
             ),
-            tbody: ({ children }) => (
-              <tbody className="divide-y divide-white/5 font-sans">
+            tbody: ({ children, ...props }) => (
+              <tbody className="divide-y divide-white/5 font-sans" {...props}>
                 {children}
               </tbody>
             ),
-            tr: ({ children }) => (
-              <tr className="hover:bg-white/[0.02] transition-colors">
+            tr: ({ children, ...props }) => (
+              <tr className="border-b border-white/[0.04] last:border-b-0 hover:bg-white/[0.03] even:bg-white/[0.01] transition-colors" {...props}>
                 {children}
               </tr>
             ),
-            th: ({ children }) => (
-              <th className="px-4 py-3 font-medium tracking-wide text-teal-300 whitespace-nowrap">
+            th: ({ children, style, ...props }) => (
+              <th
+                style={style}
+                className="px-4 py-3 font-medium tracking-wide text-teal-300 whitespace-nowrap"
+                {...props}
+              >
                 {children}
               </th>
             ),
-            td: ({ children }) => (
-              <td className="px-4 py-3 align-top text-xs sm:text-[13px] text-neutral-300 leading-relaxed">
+            td: ({ children, style, ...props }) => (
+              <td
+                style={style}
+                className="px-4 py-3 align-top text-xs sm:text-[13px] text-neutral-300 leading-relaxed"
+                {...props}
+              >
                 {children}
               </td>
             ),

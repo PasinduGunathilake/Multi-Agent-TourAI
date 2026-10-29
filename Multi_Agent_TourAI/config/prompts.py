@@ -163,7 +163,7 @@ Important:
 # Destination extractor
 DESTINATION_EXTRACTOR_PROMPT_TEMPLATE = """
 Extract ONLY the destination city name from the travel query.
-Do NOT include any punctuation, quotes, or extra words.
+Return ONLY the city name. Do NOT include any label like "Destination:", prefixes, quotes, or extra words.
 Query:
 {query}
 Destination:

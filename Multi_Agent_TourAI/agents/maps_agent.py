@@ -1,3 +1,4 @@
+import re
 import asyncio
 from langchain_core.messages import AIMessage
 from Multi_Agent_TourAI.graph.state import TravelState
@@ -14,7 +15,9 @@ def extract_destination(query: str) -> str:
     try:
         prompt = DESTINATION_EXTRACTOR_PROMPT_TEMPLATE.format(query=query)
         response = fast_llm.invoke(prompt)
-        return response.content.strip(" .\n\"'")
+        raw_city = response.content.strip(" .\n\"'")
+        clean_city = re.sub(r'^(destination|city|location|target)\s*:\s*', '', raw_city, flags=re.IGNORECASE).strip(" .\n\"'")
+        return clean_city if clean_city else query
     except Exception as e:
         logger.warning(f"Destination extraction fallback: {e}")
         return query

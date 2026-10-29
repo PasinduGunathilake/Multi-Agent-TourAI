@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -35,6 +36,9 @@ def get_current_weather(city: str) -> dict:
     """
     if not OPENWEATHER_API_KEY:
         return {"error": "OPENWEATHER_API_KEY is not set in your .env file."}
+
+    # Sanitize city parameter (strip prefixes like 'Destination:', quotes, extra whitespace)
+    city = re.sub(r'^(destination|city|location|target)\s*:\s*', '', str(city), flags=re.IGNORECASE).strip(" .\n\"'")
 
     try:
         # Call OpenWeatherMap Current Weather API
@@ -86,6 +90,9 @@ def get_forecast(city: str) -> dict:
     """
     if not OPENWEATHER_API_KEY:
         return {"error": "OPENWEATHER_API_KEY is not set in your .env file."}
+
+    # Sanitize city parameter (strip prefixes like 'Destination:', quotes, extra whitespace)
+    city = re.sub(r'^(destination|city|location|target)\s*:\s*', '', str(city), flags=re.IGNORECASE).strip(" .\n\"'")
 
     try:
         # Call OpenWeatherMap 5-Day Forecast API

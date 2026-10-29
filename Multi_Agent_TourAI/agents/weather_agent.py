@@ -16,13 +16,15 @@ def extract_destination(query: str) -> str:
     Finds and extracts the destination city from the user's travel prompt.
     For example: 'Plan a 5 days trip to Dubai from Sri Lanka' -> 'Dubai'
     """
-    prompt = DESTINATION_EXTRACTOR_PROMPT_TEMPLATE.format(
-        query = query
-    )
-
-    response = fast_llm.invoke(prompt) #for fast extraction
-
-    return response.content.strip(" .\n\"'")
+    try:
+        prompt = DESTINATION_EXTRACTOR_PROMPT_TEMPLATE.format(query=query)
+        response = fast_llm.invoke(prompt)  # for fast extraction
+        raw_city = response.content.strip(" .\n\"'")
+        clean_city = re.sub(r'^(destination|city|location|target)\s*:\s*', '', raw_city, flags=re.IGNORECASE).strip(" .\n\"'")
+        return clean_city if clean_city else query
+    except Exception as e:
+        logger.warning(f"Destination extraction fallback: {e}")
+        return query
     
 
 

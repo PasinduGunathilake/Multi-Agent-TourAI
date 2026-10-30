@@ -57,6 +57,9 @@ class TravelResponse(BaseModel):
     approved: bool | None = None
     human_feedback: str | None = ""
     llm_calls: int = 0
+    guardrail_allowed: bool | None = True
+    output_guardrail_passed: bool | None = True
+    output_guardrail_reason: str | None = ""
 
 
 # API endpoints
@@ -277,7 +280,7 @@ async def plan_stream(payload: TravelRequest):
                         "llm_calls": accumulated_state.get("llm_calls", 0),
                     }
 
-                    if node_name == "final_agent":
+                    if node_name == "output_guardrail":
                         messages = node_output.get("messages", [])
                         if messages:
                             raw_content = messages[-1].content
@@ -404,7 +407,7 @@ async def resume_stream(payload: ResumeRequest):
                     if isinstance(node_output, dict):
                         accumulated_state.update(node_output)
 
-                    if node_name == "final_agent":
+                    if node_name == "output_guardrail":
                         messages = node_output.get("messages", [])
                         if messages:
                             raw_content = messages[-1].content

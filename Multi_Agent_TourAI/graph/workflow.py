@@ -12,6 +12,7 @@ from Multi_Agent_TourAI.agents.final_agent import final_response_agent
 from Multi_Agent_TourAI.memory.checkpointer import get_checkpointer
 from Multi_Agent_TourAI.memory.store import get_store
 from Multi_Agent_TourAI.guardrails.inputguardrail import input_guardrail, guardrail_blocked
+from Multi_Agent_TourAI.guardrails.outputguardrail import output_guardrail
 from Multi_Agent_TourAI.agents.supervisor_agent import supervisor_agent
 from Multi_Agent_TourAI.agents.approval_agent import human_approval_agent
 from Multi_Agent_TourAI.utils import get_logger, log_execution
@@ -27,6 +28,7 @@ graph = StateGraph(TravelState)
 # Add Guardrail nodes to the graph
 graph.add_node("input_guardrail", input_guardrail)
 graph.add_node("guardrail_blocked", guardrail_blocked)
+graph.add_node("output_guardrail", output_guardrail)
 # Add supervisor node to the graph
 graph.add_node("supervisor", supervisor_agent)
 # Add HITL node to the graph
@@ -107,6 +109,12 @@ graph.add_edge("final_agent", END)
               │                     │ (Itinerary Polish / Specific Summary / Conversational Chat)  │
               │                     └──────────────────────────────┬───────────────────────────────┘
               │                                                    │
+              │                                                    ▼
+              │                                         ┌─────────────────────┐
+              │                                         │  output_guardrail   │
+              │                                         │ (Audit & Redaction) │
+              │                                         └──────────┬──────────┘
+              │                                                    │
               └───────────────────────────────┬────────────────────┘
                                               ▼
                                            ┌─────┐
@@ -146,10 +154,18 @@ WHY WE USE THIS DYNAMIC PARALLEL & INTENT-AWARE PIPELINE:
      Runs strictly the requested single specialist agent and bypasses Itinerary and Approval agents.
      Example: Weather inquiry finishes in ~4-6s instead of ~35s!
 
-5. Guardrail Early-Exit Security:
-   - Evaluates request safety and travel relevance in ~0.5s.
+5. Input Guardrail Early-Exit Security:
+   - Evaluates request safety, prompt injection defense, and travel relevance in ~0.5s.
    - Unrelated, malicious, or adversarial prompts are blocked immediately before triggering any 
      expensive LLMs or external API calls.
+
+6. Output Guardrail Safety, Formatting & Secret Redaction:
+   - Layer 1 Deterministic Redactor (0 tokens): Strips leaked API keys (gsk_*, AIza*, postgres://), 
+     credentials, internal prompts, and fixes compressed Markdown table rows.
+   - Layer 2 Fast-LLM Audit (~0.4s): Audits the final response for severe hallucinations, hazardous advice, 
+     and prompt injection echoes from external search data.
+   - Fail-Open & Fallback Dispatch: If severe violations occur, safely substitutes a polite disclaimer 
+     while ensuring validated responses reach the user seamlessly.
 '''
 # 2. Graph Edges & Routing Logic
 
@@ -246,7 +262,8 @@ graph.add_conditional_edges(
 # Sequential flow: Itinerary Agent -> Human Approval Agent -> Final Response Agent -> END
 graph.add_edge("itinerary_agent", "human_approval")
 graph.add_edge("human_approval", "final_agent")
-graph.add_edge("final_agent", END)
+graph.add_edge("final_agent", "output_guardrail")
+graph.add_edge("output_guardrail", END)
 
 # Early exit: Blocked requests terminate immediately without executing external APIs or LLMs
 graph.add_edge("guardrail_blocked", END)
@@ -311,6 +328,8 @@ def _serialize_workflow_result(result: dict, thread_id: str, user_id: str) -> di
         "llm_calls": result.get("llm_calls", 0),
         "guardrail_allowed": result.get("guardrail_allowed", True),
         "guardrail_reason": result.get("guardrail_reason", ""),
+        "output_guardrail_passed": result.get("output_guardrail_passed", True),
+        "output_guardrail_reason": result.get("output_guardrail_reason", ""),
     }
 
 

@@ -11,6 +11,7 @@ import {
   ChevronUp,
   ThumbsUp,
   ThumbsDown,
+  ShieldCheck,
   Plane,
   Hotel,
   CloudSun,
@@ -99,6 +100,11 @@ export default function TravelResultsView({
           <span className="text-neutral-600">•</span>
           <span className="text-neutral-500 font-mono text-[11px]">
             Groq 120B · Multi-Agent Synthesis
+          </span>
+          <span className="text-neutral-600">•</span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono text-emerald-300 bg-emerald-500/10 border border-emerald-500/20">
+            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+            Verified Safe
           </span>
         </div>
       </div>

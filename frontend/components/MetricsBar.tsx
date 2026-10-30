@@ -14,9 +14,9 @@ export default function MetricsBar() {
       icon: <Zap className="w-4 h-4 text-teal-400" />,
     },
     {
-      value: "< 0.5s",
-      label: "Guardrail & Prompt Security",
-      sublabel: "Prompt injection defense & early-exit",
+      value: "2 Gates",
+      label: "Two-Tier Guardrail Security",
+      sublabel: "Input injection defense + Output secret audit",
       icon: <ShieldCheck className="w-4 h-4 text-emerald-400" />,
     },
     {

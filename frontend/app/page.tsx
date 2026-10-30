@@ -42,6 +42,7 @@ const defaultAgentStatus = () => ({
   mapsAgent: "idle" as const,
   itineraryAgent: "idle" as const,
   finalAgent: "idle" as const,
+  outputGuardrail: "idle" as const,
   currentAgent: "Initialising...",
   elapsedMs: 0,
 });
@@ -388,7 +389,20 @@ export default function HomePage() {
                         ...s,
                         step: 3,
                         finalAgent: "done",
-                        currentAgent: "Generating...",
+                        outputGuardrail: "running",
+                        currentAgent: "🛡️ Output Guardrail: Auditing safety & format...",
+                        elapsedMs: elapsed,
+                      },
+                    };
+                  }
+                  if (ev.node === "output_guardrail") {
+                    return {
+                      ...t,
+                      agentStatus: {
+                        ...s,
+                        step: 4,
+                        outputGuardrail: "done",
+                        currentAgent: "Complete",
                         elapsedMs: elapsed,
                       },
                     };

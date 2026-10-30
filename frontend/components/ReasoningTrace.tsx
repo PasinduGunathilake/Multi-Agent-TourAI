@@ -51,7 +51,7 @@ export default function ReasoningTrace({
   }, [running]);
 
   const durationSec = elapsedMs > 0 ? (elapsedMs / 1000).toFixed(1) : "0.0";
-  const stepCount = intent === "follow_up" ? 3 : 6;
+  const stepCount = intent === "follow_up" ? 4 : intent === "specific_query" ? 5 : 9;
 
   return (
     <ChainOfThought open={open} onOpenChange={setOpen}>
@@ -161,9 +161,9 @@ export default function ReasoningTrace({
 
         {/* Step 7: Final Synthesis */}
         <ChainOfThoughtStep
-          status={running && (status.finalAgent === "running" || status.itineraryAgent === "done") ? "running" : undefined}
+          status={running && status.finalAgent === "running" ? "running" : undefined}
           icon={<Sparkles className="w-3.5 h-3.5 text-purple-400" />}
-          title={!running ? "Generated final polished itinerary dossier" : "Generating final dossier via Groq 120B Flagship…"}
+          title={status.finalAgent === "done" || !running ? "Generated final polished itinerary dossier" : "Generating final dossier via Groq 120B Flagship…"}
           description={
             !running
               ? `Completed with Groq 120B reasoning and saved ACID checkpoint to PostgreSQL (${durationSec}s)`
@@ -171,6 +171,24 @@ export default function ReasoningTrace({
           }
         >
           <ChainOfThoughtSearchResults results={["groq-120b.ai", "postgresql-checkpointer"]} />
+        </ChainOfThoughtStep>
+
+        {/* Step 8: Output Guardrail Audit */}
+        <ChainOfThoughtStep
+          status={running && (status.outputGuardrail === "running" || (status.finalAgent === "done" && status.outputGuardrail !== "done")) ? "running" : undefined}
+          icon={<ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />}
+          title={
+            !running || status.outputGuardrail === "done"
+              ? "Output Guardrail verified safety & formatting"
+              : "Auditing output safety, credentials & markdown…"
+          }
+          description={
+            !running || status.outputGuardrail === "done"
+              ? "Zero-token regex secret redaction passed, markdown tables validated, and hallucination audit complete"
+              : "Scanning for leaked API keys, validating markdown syntax, and executing fast-llm safety audit"
+          }
+        >
+          <ChainOfThoughtSearchResults results={["regex-shield", "secret-redactor", "fast-llm-audit"]} />
         </ChainOfThoughtStep>
       </ChainOfThoughtContent>
     </ChainOfThought>

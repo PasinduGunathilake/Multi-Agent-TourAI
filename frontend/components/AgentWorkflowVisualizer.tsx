@@ -29,6 +29,7 @@ export interface AgentStepStatus {
   itineraryAgent: "idle" | "running" | "done";
   approvalStatus?: "idle" | "awaiting" | "approved" | "revised";
   finalAgent?: "idle" | "running" | "done";
+  outputGuardrail?: "idle" | "running" | "done" | "sanitized" | "blocked";
   currentAgent: string;
   elapsedMs: number;
 }
@@ -291,6 +292,10 @@ export default function AgentWorkflowVisualizer({ status, userQuery }: AgentWork
               </span>
               <span className="text-white/20">→</span>
               <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300">final_agent</span>
+              <span className="text-white/20">→</span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 flex items-center gap-1">
+                <ShieldAlert className="w-2.5 h-2.5" /> output_guardrail
+              </span>
               <span className="text-white/20">→</span>
               <span className="text-emerald-400">END</span>
             </div>

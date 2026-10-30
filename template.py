@@ -13,6 +13,7 @@ list_of_dirnfiles = [
     # Guardrail module (Security/ Safety & Domain Validation)
     f"{project_name}/guardrails/__init__.py",
     f"{project_name}/guardrails/inputguardrail.py",
+    f"{project_name}/guardrails/outputguardrail.py",
     
     # agents module
     f"{project_name}/agents/__init__.py",

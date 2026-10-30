@@ -57,7 +57,6 @@ def final_response_agent(state: TravelState):
         response = smart_llm.invoke(messages_payload)
         return {
             "final_response": response.content,
-            "messages": [response],
             "llm_calls": 1,
         }
 
@@ -81,7 +80,6 @@ def final_response_agent(state: TravelState):
         ])
         return {
             "final_response": response.content,
-            "messages": [response],
             "llm_calls": 1,
         }
 
@@ -121,7 +119,6 @@ def final_response_agent(state: TravelState):
 
     return {
         "final_response": response.content,
-        "messages": [response],
         "llm_calls": 1,
     }
 

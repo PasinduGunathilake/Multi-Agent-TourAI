@@ -19,14 +19,26 @@ The system addresses the fundamental limitations of monolithic, single-prompt La
                                            HIGH-LEVEL ARCHITECTURE
                                   =========================================
 
-   [ Next.js 15 Client ] ◄── (SSE Typewriter Stream) ──┐
-             │                                         │
-             ▼ (HTTP POST /api/plan/stream)            │
-   ┌───────────────────────────────────────────────────┼──────────────────────────────────────────┐
-   │ FastAPI Backend Server (app.py)                   │                                          │
-   │  - CORSMiddleware, Uvicorn Asyncio Event Loop     │                                          │
-   │  - nest_asyncio.apply() Re-Entrancy Patch         │                                          │
-   │  - LangSmith Tracing & Telemetry Context Binding  │                                          │
+   [ Client Browser ] ─────────── (HTTP Port 80) ───────────┐
+                                                            ▼
+                                          ┌────────────────────────────────────┐
+                                          │ NGINX Reverse Proxy (nginx.conf)   │
+                                          │  - Unified Port 80 Entrypoint      │
+                                          │  - SSE Zero-Buffering (no chunking)│
+                                          │  - 300s Extended Worker Timeouts   │
+                                          │  - WebSocket Upgrade (_next/hmr)   │
+                                          └───────┬────────────────────┬───────┘
+                                                  │                    │
+                           ┌──────────────────────┘                    └──────────────────────┐
+                           ▼ (proxy_pass :3000)                                               ▼ (proxy_pass :8000)
+   [ Next.js 15 Client ] ◄── (SSE Typewriter Stream) ──┐                                      │
+             │                                         │                                      │
+             ▼ (HTTP POST /api/plan/stream via Nginx) ─┴──────────────────────────────────────┤
+   ┌──────────────────────────────────────────────────────────────────────────────────────────┼─┐
+   │ FastAPI Backend Server (app.py)                                                          │ │
+   │  - CORSMiddleware, Uvicorn Asyncio Event Loop                                            │ │
+   │  - nest_asyncio.apply() Re-Entrancy Patch                                                │ │
+   │  - LangSmith Tracing & Telemetry Context Binding                                         │ │
    │                                                   │                                          │
    │   ┌───────────────────────────────────────────────┴──────────────────────────────────────┐   │
    │   │ LangGraph StateGraph Engine (Multi_Agent_TourAI/graph/workflow.py)                   │   │
@@ -181,6 +193,7 @@ Modern multi-agent architectures face a dual concurrency challenge: they must ha
 | **SSE Streaming over WebSockets** | Full-Duplex WebSockets (`ws://`) | SSE operates over standard HTTP/1.1 and HTTP/2, traversals enterprise corporate firewalls without proxy protocol upgrades, supports built-in client reconnection via `EventSource`, and provides unidirectional server-to-client streaming matching LLM token generation. Client-to-server commands (HITL approval) are cleanly handled via REST POST endpoints. |
 | **Synchronous Nodes + `nest_asyncio` over 100% Async Native Nodes** | Converting all 9 agents to `async def` | LangGraph allows both sync and async nodes. Converting the entire graph to `async def` would require async database drivers (`psycopg` async pool), asynchronous checkpointer implementations (`AsyncPostgresSaver`), and rewriting all CLI/unit testing tools. Using synchronous nodes with `asyncio.run` + `nest_asyncio` bridges MCP coroutines with zero disruption to LangGraph's synchronous checkpointer ecosystem. |
 | **Delayed Typewriter Token Streaming over Raw Chunk Streaming** | Direct token streaming from Groq LLM | Streaming raw LLM tokens leaks unvetted text directly to the client socket. In TourAI, security is non-negotiable: the `output_guardrail` must audit the complete text for secrets and hallucinations *before* any characters reach the user's screen. The synthetic typewriter stream (`await asyncio.sleep(0.015)`) preserves smooth visual UX while providing 100% pre-delivery safety verification. |
+| **Reverse Proxy Buffering Suppression (`proxy_buffering off`)** | Default NGINX proxy buffering | Default reverse proxies buffer upstream HTTP chunks until buffer thresholds (~4KB) are reached, which destroys real-time SSE streaming UX. Configuring `proxy_buffering off`, `proxy_cache off`, and `chunked_transfer_encoding on` in `nginx/nginx.conf` ensures tokens stream instantly with zero jitter. |
 
 ---
 
@@ -573,6 +586,7 @@ Multi-Agent-TourAI establishes a **Two-Tier Defensive Perimeter** surrounding th
 - **File Reference:** `Multi_Agent_TourAI/guardrails/outputguardrail.py` (lines 44–160), `prompts.py` (lines 41–71)
 - **Layer 1: Deterministic Regex Redaction (`outputguardrail.py:13-25, 44-73`):**
   Executes before any LLM evaluation:
+  - **Defensive Type Normalization:** Automatically converts multimodal or list-based LLM response blocks (e.g., from Google Gemini fallback `gemini-3.5-flash-lite`) into unified string text prior to regex evaluation, preventing `TypeError: expected string or bytes-like object, got 'list'`.
   - Scans for Groq keys (`gsk_*`), Gemini keys (`AIza*`), Tavily keys (`tvly-*`), and database URLs (`postgres://*`, `postgresql://*`), replacing matches with `"[REDACTED_SECRET]"`.
   - Strips internal prompt echoes such as `Human Review Instruction:` and `=== EXISTING ITINERARY ===`.
   - Fixes Markdown tables via `re.sub(r"(\|\s*)\n?(\|\s*[-:]+[-| :]*\|)\n?(\|)", r"\1\n\2\n\3", cleaned)`, ensuring header-row separators render correctly in frontend markdown parsers.
@@ -937,6 +951,8 @@ Multi-Agent-TourAI operates under a **Zero-Unrecoverable-Failure Philosophy**: n
 | **AviationStack MCP Offline** | Flight Agent | `asyncio.run` network timeout | Agent returns fallback status string | Missing flights noted in final plan |
 | **Server Crash during HITL** | Workflow Engine | Process killed during human review | State reloaded from PostgreSQL via `thread_id` | Zero data loss |
 | **Corrupted Output Table** | Final Agent | Markdown regex match in Output Guardrail | Automated insertion of delimiter newlines | Rendered cleanly |
+| **Gemini Content Block List Format** | Final Agent & Guardrails | Content block list returned by Gemini fallback | Normalization via `_normalize_content()` and defensive string conversion in `sanitize_text` | Seamless output delivery without runtime crash |
+| **Proxy SSE Chunk Aggregation** | Infrastructure (NGINX) | Buffered chunks delay typewriter stream | `proxy_buffering off` + `chunked_transfer_encoding on` in `nginx.conf` | Real-time token streaming with zero latency |
 
 ---
 

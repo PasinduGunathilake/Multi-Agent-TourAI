@@ -10,6 +10,7 @@
 [![Guardrails](https://img.shields.io/badge/Guardrails-Two--Tier_Defense-red?style=for-the-badge)](Multi_Agent_TourAI/guardrails/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js)](https://nextjs.org)
+[![Nginx](https://img.shields.io/badge/Nginx-Reverse_Proxy-009639?style=for-the-badge&logo=nginx&logoColor=white)](nginx/nginx.conf)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-3ECF8E?style=for-the-badge&logo=postgresql&logoColor=white)](https://supabase.com)
 [![LangSmith](https://img.shields.io/badge/LangSmith-Observability-6B4FBB?style=for-the-badge)](https://smith.langchain.com)
 [![Groq](https://img.shields.io/badge/Groq-120B_+_20B-F55036?style=for-the-badge)](https://console.groq.com)
@@ -20,22 +21,10 @@
 
 ---
 
-## Executive Summary & System Overview
-
-**Multi-Agent-TourAI** is an enterprise-grade, full-stack AI travel planning system that orchestrates **8 specialized AI agents** using LangGraph's `StateGraph` to produce complete, personalized travel plans. Instead of a single monolithic LLM call, the system decomposes every travel request into parallel, independent specialist tasks -- real-time flight search, hotel discovery, live weather forecasting, geospatial attraction mapping, and day-by-day itinerary drafting -- all coordinated through a dynamic intent-aware supervisor routing engine.
-
-Every query passes through a **Two-Tier Guardrail Architecture**: an **Input Guardrail** that filters off-topic or prompt-injection attempts in <0.5s before external APIs or expensive LLMs are invoked, and a **Three-Layer Output Guardrail** that guarantees zero secret leakage, table format normalization, and semantic hallucination checks before any response reaches the user.
-
-Once the draft itinerary is produced, the workflow **pauses** via LangGraph's `interrupt()`, presenting the plan to the human traveler for review before final synthesis. Every session's state and conversation history is durably persisted in **PostgreSQL (Supabase)**, enabling fault recovery, workflow resumption after server restarts, and full cross-session user memory.
-
-The backend exposes a **FastAPI v2 streaming SSE API**. The frontend is a modern **Next.js 15** application with real-time per-agent trace visualization, a living architecture pipeline diagram, an interactive reasoning trace timeline, and rich structured travel result cards (flights, hotels, weather, maps).
-
----
-
 ## Table of Contents
 
+- [The Problem: Why Monolithic LLMs Fail at Travel Planning](#the-problem-why-monolithic-llms-fail-at-travel-planning)
 - [Executive Summary & System Overview](#executive-summary--system-overview)
-- [Table of Contents](#table-of-contents)
 - [Key System Features](#key-system-features)
 - [Modular System Architecture](#modular-system-architecture)
 - [Core AI Engineering Architectural Deep-Dive (7 Concepts)](#core-ai-engineering-architectural-deep-dive-7-concepts)
@@ -52,8 +41,48 @@ The backend exposes a **FastAPI v2 streaming SSE API**. The frontend is a modern
 - [Installation & Setup Guide](#installation--setup-guide)
 - [Environment Variables](#environment-variables)
 - [Running the Application](#running-the-application)
+  - [Start the Backend (FastAPI)](#start-the-backend-fastapi)
+  - [Start the Frontend (Next.js)](#start-the-frontend-nextjs)
+  - [Production Reverse Proxy (Nginx)](#production-reverse-proxy-nginx)
 - [Enterprise Security & System Resilience](#enterprise-security--system-resilience)
 - [Author & License](#author)
+
+---
+
+## The Problem: Why Monolithic LLMs Fail at Travel Planning
+
+Traditional single-prompt, monolithic Large Language Model (LLM) applications fail dramatically when tasked with end-to-end travel planning in production. Key architectural deficiencies include:
+
+1. **Severe Hallucinations & Temporal Blindspots:** Monolithic LLMs lack live deterministic APIs. When asked for flight schedules, hotel vacancies, or weather conditions, they hallucinate non-existent flight codes, outdated ticket fares, and permanently closed venues.
+2. **Sequential Latency & Token Exhaustion:** Forcing a single model to sequentially research flights, evaluate accommodations, check meteorological data, calculate geodetic distances, and draft day-by-day schedules yields unacceptable latency (>40s) and rapidly breaches token-per-minute (TPM) quotas.
+3. **Zero Safety & Credential Leakage Vectors:** Raw user prompts directly entering core models open severe prompt injection vectors, while uninspected model outputs risk leaking internal database connection strings or third-party API secrets.
+4. **Stateless Amnesia & Fragile Resumptions:** Standard conversational wrappers lose context upon browser refresh or server restart, offering no ACID durability or long-term cross-session preference tracking.
+5. **Missing Human-in-the-Loop (HITL) Governance:** Users cannot inspect intermediate routing decisions, review draft itineraries, or inject manual corrections prior to final synthesized commitment.
+
+### The Architectural Paradigm Shift
+
+| Dimension | Monolithic Single-Prompt LLM | Multi-Agent-TourAI Architecture |
+| :--- | :--- | :--- |
+| **Data Recency** | Static weights (6–18 months outdated) | Real-time live data via 4 MCP tools (AviationStack, Tavily, OpenWeather, Geoapify) |
+| **Execution Model** | Monolithic sequential generation (~40s) | Concurrent 4-agent parallel fan-out swarm (~21s, 38% latency reduction) |
+| **Safety & Verification** | None / Naive post-processing | Two-tier defense: Input Guardrail (<0.5s) + 3-layer Output Guardrail (regex + semantic audit) |
+| **State Persistence** | Transient in-memory state (lost on restart) | ACID-compliant dual-layer PostgreSQL (Supabase) via `PostgresSaver` & `PostgresStore` |
+| **Human Review** | None (direct commit to final output) | StateGraph `interrupt()` barrier for traveler approval & custom revision loop |
+| **Fault Tolerance** | Single API/rate-limit error crashes session | Hybrid LLM tiering (Groq 120B/20B) with automatic Google Gemini Flash-Lite fallback |
+
+---
+
+## Executive Summary & System Overview
+
+**Multi-Agent-TourAI** is an enterprise-grade, full-stack AI travel planning system that orchestrates **8 specialized AI agents** using LangGraph's `StateGraph` to produce complete, personalized travel plans. Instead of a single monolithic LLM call, the system decomposes every travel request into parallel, independent specialist tasks -- real-time flight search, hotel discovery, live weather forecasting, geospatial attraction mapping, and day-by-day itinerary drafting -- all coordinated through a dynamic intent-aware supervisor routing engine.
+
+Every query passes through a **Two-Tier Guardrail Architecture**: an **Input Guardrail** that filters off-topic or prompt-injection attempts in <0.5s before external APIs or expensive LLMs are invoked, and a **Three-Layer Output Guardrail** that guarantees zero secret leakage, table format normalization, and semantic hallucination checks before any response reaches the user.
+
+Once the draft itinerary is produced, the workflow **pauses** via LangGraph's `interrupt()`, presenting the plan to the human traveler for review before final synthesis. Every session's state and conversation history is durably persisted in **PostgreSQL (Supabase)**, enabling fault recovery, workflow resumption after server restarts, and full cross-session user memory.
+
+The backend exposes a **FastAPI v2 streaming SSE API**. The frontend is a modern **Next.js 15** application with real-time per-agent trace visualization, a living architecture pipeline diagram, an interactive reasoning trace timeline, and rich structured travel result cards (flights, hotels, weather, maps).
+
+---
 
 > 📖 **Comprehensive Architectural Reference:** For the exhaustive, publication-grade architectural specification with detailed code traces, formal proofs, and execution lifecycles, see **[docs/AI_ARCHITECTURE.md](docs/AI_ARCHITECTURE.md)**.
 
@@ -135,6 +164,9 @@ Multi-Agent-TourAI/
 |   |   +-- ChatInput/                    # Chat input with HITL approval controls
 |   +-- package.json
 |
++-- nginx/                                # Production reverse proxy configuration
+|   +-- nginx.conf                        # Unified reverse proxy (SSE zero-buffering, WS, routing)
+|
 +-- app.py                                # FastAPI v2 app -- all REST + SSE endpoints
 +-- backend.py                            # Backend entry point helpers
 +-- entrypoint.py                         # CLI entrypoint
@@ -214,8 +246,8 @@ FastAPI (Uvicorn Loop) ──► travel_graph.stream() ──► Synchronous Nod
 ### 3. Workflows
 
 #### Implementation Mechanics
-- **Sequential Workflows (`workflow.py:173, 263-269`):** Enforces linear execution at safety boundaries: `START -> input_guardrail`, `itinerary_agent -> human_approval -> final_agent -> output_guardrail -> END`, and `guardrail_blocked -> END`.
-- **Parallel Fan-Out Workflows (`workflow.py:201-224`):** When `intent == "new_plan"`, `route_from_supervisor` returns `["flight_agent", "hotel_agent", "weather_agent", "maps_agent"]`. LangGraph schedules all 4 nodes in a single superstep. Because the four data domains depend only on the destination city, parallel execution cuts tool latency from ~34s to ~21s (a ~38-40% reduction).
+- **Sequential Workflows - Old Way (`workflow.py:173, 263-269`):** Enforces linear execution at safety boundaries: `START -> input_guardrail`, `itinerary_agent -> human_approval -> final_agent -> output_guardrail -> END`, and `guardrail_blocked -> END`.
+- **Parallel Fan-Out Workflows - New Efficient Way (`workflow.py:201-224`):** When `intent == "new_plan"`, `route_from_supervisor` returns `["flight_agent", "hotel_agent", "weather_agent", "maps_agent"]`. LangGraph schedules all 4 nodes in a single superstep. Because the four data domains depend only on the destination city, parallel execution cuts tool latency from ~34s to ~21s (a ~38-40% reduction).
 - **Conflict-Free State Reducers (`state.py:12, 33`):** Concurrency safety is guaranteed by state design: shared fields use `Annotated[..., operator.add]` (`messages`, `llm_calls`), while domain results write to disjoint, non-conflicting string fields (`flight_results`, `hotel_results`, `weather_results`, `maps_results`).
 - **Iterative & HITL Loops (`approval_agent.py:10-38`, `workflow.py:433-442`):** Human review feedback is captured in `state["human_feedback"]`. The graph resumes from PostgreSQL checkpoints, feeding adjustments into `final_agent`. Subsequent user follow-ups loop through `intent == "follow_up"`, resolving conversational modifications without re-running external tools.
 - **Conditional Edge Routing (3 Routers):**
@@ -699,6 +731,12 @@ Multi-Agent-TourAI ships with **full distributed tracing** via LangSmith, provid
 | Lucide React | Modern iconography |
 | EventSource API | SSE streaming from FastAPI backend |
 
+### Infrastructure & Reverse Proxy
+
+| Technology | Purpose |
+| :--- | :--- |
+| Nginx | Production reverse proxy, unified port 80 routing, SSE zero-buffering, Next.js HMR WebSocket upgrades |
+
 ---
 
 ## Installation & Setup Guide
@@ -815,6 +853,33 @@ npm run dev
 ```
 
 - Frontend interface: `http://localhost:3000`
+
+### Production Reverse Proxy (Nginx)
+
+In production or local full-stack integration, Nginx unifies the Next.js frontend and FastAPI backend under a single domain entrypoint (`http://localhost:80`), resolving cross-origin (CORS) concerns and optimizing AI streaming traffic:
+
+- **Unified Routing:** Routes `/api/*`, `/health`, and `/docs` to FastAPI (`127.0.0.1:8000`), while serving `/` and all static web assets through Next.js (`127.0.0.1:3000`).
+- **SSE Zero-Buffering (`proxy_buffering off`):** Disables proxy response buffering and caching so real-time token generation and agent turn updates stream immediately to the client socket.
+- **WebSocket Upgrade Support:** Full support for `Upgrade` and `Connection` headers for Next.js Fast Refresh / Hot Module Replacement (`/_next/webpack-hmr`).
+- **Extended 300s Timeouts:** Tailored `proxy_read_timeout` to accommodate multi-agent fan-out searches and human-in-the-loop (HITL) review pauses without socket drops.
+
+```bash
+# Run with Nginx (Windows)
+nginx -p . -c nginx/nginx.conf
+
+# Run with Nginx (Linux / macOS)
+sudo nginx -c $(pwd)/nginx/nginx.conf
+
+# Or run via Docker container
+docker run -d --name tour_proxy -p 80:80 \
+  -v $(pwd)/nginx/nginx.conf:/etc/nginx/nginx.conf:ro \
+  --add-host=host.docker.internal:host-gateway \
+  nginx:alpine
+```
+
+- Unified App Interface: `http://localhost`
+- API Health Check: `http://localhost/health`
+- Interactive API Docs: `http://localhost/docs`
 
 ---
 

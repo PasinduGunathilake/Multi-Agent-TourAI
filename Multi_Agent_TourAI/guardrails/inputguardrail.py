@@ -16,8 +16,17 @@ COMMON_GREETINGS = {
 }
 
 # json helper
-def _extract_json(text: str) -> dict[str, Any]:
+def _extract_json(text: Any) -> dict[str, Any]:
     """Extract the first complete JSON object returned by the model"""
+    if isinstance(text, list):
+        text = "".join(
+            item.get("text", str(item)) if isinstance(item, dict)
+            else getattr(item, "text", str(item))
+            for item in text
+        )
+    elif not isinstance(text, str):
+        text = str(text or "")
+
     start = text.find("{")
     end = text.rfind("}")
 

@@ -74,9 +74,11 @@ list_of_dirnfiles = [
     "entrypoint.py",
     "backend.py",
     "requirements.txt", # for Rest api, if you need frontend make separate dir and go on.
+    "nginx/nginx.conf",
 ]
 
 for filepath in list_of_dirnfiles:
+    # if dir doesn't exist; create dir
     filepath = Path(filepath)
     filedir, filename = os.path.split(filepath)
 
@@ -84,7 +86,8 @@ for filepath in list_of_dirnfiles:
         os.makedirs(filedir, exist_ok=True)
         print(f"Creating dir: {filedir}")
 
-    if (not os.path.exists(filepath)) or (os.path.getsize(filepath) == 0):
+    # if file doesn't exist or empty; create dir
+    if (not os.path.exists(filepath)) or (os.path.getsize(filepath) == 0 ): #os.path.getsize(filepath) == 0 ; if existing file have code, it should not override 
         with open(filepath, "w") as f:
             pass
             print(f"Creating file: {filepath}")

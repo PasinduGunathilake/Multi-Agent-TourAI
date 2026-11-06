@@ -1,3 +1,4 @@
+from typing import Any
 from langchain_core.messages import SystemMessage, HumanMessage
 from Multi_Agent_TourAI.graph.state import TravelState
 from Multi_Agent_TourAI.llms.llm import smart_llm
@@ -6,6 +7,27 @@ from Multi_Agent_TourAI.utils import get_logger, log_execution
 
 # Set up logging for this agent
 logger = get_logger(__name__)
+
+
+def _normalize_content(content: Any) -> str:
+    """Safely extracts text string from LLM response content (supports str, list of blocks, or dicts)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(item.get("text", str(item)))
+            elif hasattr(item, "text"):
+                parts.append(str(item.text))
+            else:
+                parts.append(str(item))
+        return "".join(parts)
+    if content is None:
+        return ""
+    return str(content)
 
 # Final Response agent with HITL feedback
 @log_execution
@@ -56,7 +78,7 @@ def final_response_agent(state: TravelState):
 
         response = smart_llm.invoke(messages_payload)
         return {
-            "final_response": response.content,
+            "final_response": _normalize_content(response.content),
             "llm_calls": 1,
         }
 
@@ -79,7 +101,7 @@ def final_response_agent(state: TravelState):
             HumanMessage(content=specific_prompt),
         ])
         return {
-            "final_response": response.content,
+            "final_response": _normalize_content(response.content),
             "llm_calls": 1,
         }
 
@@ -118,7 +140,7 @@ def final_response_agent(state: TravelState):
     ])
 
     return {
-        "final_response": response.content,
+        "final_response": _normalize_content(response.content),
         "llm_calls": 1,
     }
 

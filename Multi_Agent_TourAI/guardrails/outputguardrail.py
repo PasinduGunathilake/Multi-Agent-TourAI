@@ -32,8 +32,17 @@ SAFE_FALLBACK_RESPONSE = (
 )
 
 
-def _extract_json(text: str) -> dict[str, Any]:
+def _extract_json(text: Any) -> dict[str, Any]:
     """Extracts the first valid JSON object from model response."""
+    if isinstance(text, list):
+        text = "".join(
+            item.get("text", str(item)) if isinstance(item, dict)
+            else getattr(item, "text", str(item))
+            for item in text
+        )
+    elif not isinstance(text, str):
+        text = str(text or "")
+
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1 or end < start:
@@ -41,7 +50,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     return json.loads(text[start : end + 1])
 
 
-def sanitize_text(text: str) -> tuple[str, bool]:
+def sanitize_text(text: Any) -> tuple[str, bool]:
     """
     Deterministic Layer 1 Sanitization (Zero LLM Tokens):
     - Redacts any API keys or database URLs.
@@ -49,7 +58,17 @@ def sanitize_text(text: str) -> tuple[str, bool]:
     - Fixes common broken markdown table issues.
     """
     modified = False
-    cleaned = text
+    if isinstance(text, list):
+        cleaned = "".join(
+            item.get("text", str(item)) if isinstance(item, dict)
+            else getattr(item, "text", str(item))
+            for item in text
+        )
+        modified = True
+    elif not isinstance(text, str):
+        cleaned = str(text or "")
+    else:
+        cleaned = text
 
     # 1. Redact Secrets
     for pattern in SECRET_PATTERNS:
@@ -88,7 +107,17 @@ def output_guardrail(state: TravelState):
     if not raw_response:
         messages = state.get("messages", [])
         if messages:
-            raw_response = messages[-1].content if isinstance(messages[-1].content, str) else str(messages[-1].content)
+            raw_response = messages[-1].content
+
+    # Normalize response to string (e.g. if LLM returned content blocks list)
+    if isinstance(raw_response, list):
+        raw_response = "".join(
+            item.get("text", str(item)) if isinstance(item, dict)
+            else getattr(item, "text", str(item))
+            for item in raw_response
+        )
+    elif not isinstance(raw_response, str):
+        raw_response = str(raw_response or "")
 
     user_query = state.get("user_query", "")
     logger.info("Output Guardrail: Initiating multi-layer audit...")

@@ -16,6 +16,12 @@ Multi_Agent_TourAI/agents/itinerary_agent.py
 Multi_Agent_TourAI/agents/maps_agent.py
 Multi_Agent_TourAI/agents/supervisor_agent.py
 Multi_Agent_TourAI/agents/weather_agent.py
+Multi_Agent_TourAI/auth/__init__.py
+Multi_Agent_TourAI/auth/dependencies.py
+Multi_Agent_TourAI/auth/jwt_validator.py
+Multi_Agent_TourAI/auth/models.py
+Multi_Agent_TourAI/auth/rate_limiter.py
+Multi_Agent_TourAI/auth/thread_repo.py
 Multi_Agent_TourAI/config/__init__.py
 Multi_Agent_TourAI/config/prompts.py
 Multi_Agent_TourAI/graph/__init__.py

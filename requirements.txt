@@ -19,6 +19,7 @@ pyyaml==6.0.3
 langchain-mcp-adapters==0.3.0 # create mcp client
 nest_asyncio==1.6.0
 mcp==1.28.1
+redis==8.1.0
 uv # for aviationstack mcp
 
 -e .

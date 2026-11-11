@@ -14,6 +14,14 @@ list_of_dirnfiles = [
     f"{project_name}/guardrails/__init__.py",
     f"{project_name}/guardrails/inputguardrail.py",
     f"{project_name}/guardrails/outputguardrail.py",
+
+    # auth & security module (Supabase JWT, Multi-User Isolation & Rate Limiting)
+    f"{project_name}/auth/__init__.py",
+    f"{project_name}/auth/models.py",
+    f"{project_name}/auth/jwt_validator.py",
+    f"{project_name}/auth/thread_repo.py",
+    f"{project_name}/auth/rate_limiter.py",
+    f"{project_name}/auth/dependencies.py",
     
     # agents module
     f"{project_name}/agents/__init__.py",
@@ -43,10 +51,11 @@ list_of_dirnfiles = [
     f"{project_name}/tools/flight_tool.py",
     f"{project_name}/tools/tavily_tool.py",
 
-    # memory & database module (PostgresServer)
+    # memory & database module (PostgresServer & Migrations)
     f"{project_name}/memory/__init__.py",
     f"{project_name}/memory/checkpointer.py", # short-term persistance memory
     f"{project_name}/memory/store.py", # long-term persistance memory
+    "migrations/001_create_user_threads.sql",
 
     # config & prompts module
     f"{project_name}/config/__init__.py",

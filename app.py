@@ -1,3 +1,4 @@
+import os
 import json
 import uuid
 import asyncio
@@ -6,12 +7,21 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from Multi_Agent_TourAI.graph.workflow import travel_graph
 from langgraph.types import Command
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from Multi_Agent_TourAI.graph.workflow import run_travel_agent, resume_travel_agent
 from Multi_Agent_TourAI.guardrails.inputguardrail import check_input_safety
 from Multi_Agent_TourAI.guardrails.outputguardrail import sanitize_text
+from Multi_Agent_TourAI.auth import (
+    AuthenticatedUser,
+    get_current_user,
+    check_rate_limit_for,
+    create_user_thread,
+    verify_thread_ownership,
+    get_user_threads,
+    safe_delete_user_thread,
+)
 from Multi_Agent_TourAI.utils import get_logger
 # nested event loops for async call in fast api
 import nest_asyncio
@@ -26,14 +36,16 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# CORS Middleware
+# CORS Middleware - Enforce explicit allowed origins without wildcards
+_frontend_origins_env = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+_allowed_origins = [orig.strip() for orig in _frontend_origins_env.split(",") if orig.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-
 )
 
 # Request , Response data models
@@ -70,16 +82,27 @@ async def health_check():
     return {"status": "healthy", "services": "Multi_Agent_TourAI"}
 
 @app.post("/api/plan", response_model=TravelResponse)
-async def plan(payload: TravelRequest):
+async def plan(
+    payload: TravelRequest,
+    user: AuthenticatedUser = Depends(check_rate_limit_for("plan")),
+):
     user_query = payload.query.strip()
 
     if not user_query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
-    logger.info(f"Incoming Travel Request: '{user_query}' | Thread: {payload.thread_id}")
+
+    if payload.thread_id:
+        if not verify_thread_ownership(user.id, payload.thread_id):
+            raise HTTPException(status_code=404, detail="Thread not found")
+        thread_id = payload.thread_id
+    else:
+        thread_id = create_user_thread(user.id, title=user_query[:50])
+
+    logger.info(f"Incoming Travel Request: '{user_query}' | Thread: {thread_id} | User: {user.id}")
 
     try:
         # run Multi-Agent Workflow
-        result = run_travel_agent(user_input=user_query, thread_id=payload.thread_id)
+        result = run_travel_agent(user_input=user_query, thread_id=thread_id, user_id=user.user_id_str)
         logger.info(f"Travel Plan Ready | Requires Approval: {result.get('requires_approval', False)} | Total LLM Calls: {result.get('llm_calls', 0)}")
         return result
     except Exception as e:
@@ -87,10 +110,16 @@ async def plan(payload: TravelRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/plan/resume", response_model=TravelResponse)
-async def resume(payload: ResumeRequest):
+async def resume(
+    payload: ResumeRequest,
+    user: AuthenticatedUser = Depends(check_rate_limit_for("resume")),
+):
     thread_id = payload.thread_id.strip() if payload.thread_id else ""
     if not thread_id:
         raise HTTPException(status_code=400, detail="thread_id is required to resume workflow.")
+
+    if not verify_thread_ownership(user.id, thread_id):
+        raise HTTPException(status_code=404, detail="Thread not found")
 
     feedback = payload.feedback.strip() if payload.feedback else ""
     if len(feedback) > 1500:
@@ -103,12 +132,13 @@ async def resume(payload: ResumeRequest):
             logger.warning(f"Resume feedback blocked by input guardrail | Thread: {thread_id} | Reason: {reason}")
             raise HTTPException(status_code=400, detail=f"Feedback rejected by safety guardrail: {reason}")
 
-    logger.info(f"Incoming Resume Request: Thread={thread_id} | Approved={payload.approved} | Feedback='{feedback}'")
+    logger.info(f"Incoming Resume Request: Thread={thread_id} | User={user.id} | Approved={payload.approved} | Feedback='{feedback}'")
     try:
         result = resume_travel_agent(
             thread_id=thread_id,
             approved=payload.approved,
             feedback=feedback,
+            user_id=user.user_id_str,
         )
         logger.info(f"Workflow Resumed | Total LLM Calls: {result.get('llm_calls', 0)}")
         return result
@@ -120,11 +150,17 @@ async def resume(payload: ResumeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/history/{thread_id}")
-async def get_thread_history(thread_id: str):
+async def get_thread_history(
+    thread_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    if not verify_thread_ownership(user.id, thread_id):
+        raise HTTPException(status_code=404, detail="Thread not found")
+
     config = {
         "configurable": {
             "thread_id": thread_id,
-            "user_id": "default_user",
+            "user_id": user.user_id_str,
         }
     }
     try:
@@ -181,32 +217,49 @@ async def get_thread_history(thread_id: str):
         return {"turns": [], "thread_id": thread_id}
 
 @app.delete("/api/session/{thread_id}")
-async def delete_session(thread_id: str):
+async def delete_session(
+    thread_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
     """
-    Deletes all LangGraph checkpoints and cached state from PostgreSQL for the given thread_id.
+    Safely deletes thread ownership and all LangGraph checkpoints for the authenticated user.
     """
-    from Multi_Agent_TourAI.memory.checkpointer import delete_thread_checkpoints
-    try:
-        success = delete_thread_checkpoints(thread_id)
-        if success:
-            logger.info(f"Successfully deleted checkpoints for thread: {thread_id}")
-            return {"status": "deleted", "thread_id": thread_id}
-        else:
-            return {"status": "not_found_or_failed", "thread_id": thread_id}
-    except Exception as e:
-        logger.error(f"Error deleting session {thread_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    success = safe_delete_user_thread(user.id, thread_id)
+    if success:
+        logger.info(f"Successfully deleted checkpoints and thread: {thread_id} | User: {user.id}")
+        return {"status": "deleted", "thread_id": thread_id}
+    else:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+@app.get("/api/threads")
+async def list_threads(
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Returns all travel threads owned by the authenticated user.
+    """
+    threads = get_user_threads(user.id)
+    return {"threads": [t.model_dump() for t in threads]}
 
 # Real-time Server-Sent Events (SSE) Streaming Endpoint
 @app.post("/api/plan/stream")
-async def plan_stream(payload: TravelRequest):
+async def plan_stream(
+    payload: TravelRequest,
+    user: AuthenticatedUser = Depends(check_rate_limit_for("plan")),
+):
     user_query = payload.query.strip()
     if not user_query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    thread_id = payload.thread_id or f"user_{uuid.uuid4().hex}"
-    user_id = "default_user"
-    logger.info(f"Incoming Real-time Streaming Request: '{user_query}' | Thread: {thread_id}")
+    if payload.thread_id:
+        if not verify_thread_ownership(user.id, payload.thread_id):
+            raise HTTPException(status_code=404, detail="Thread not found")
+        thread_id = payload.thread_id
+    else:
+        thread_id = create_user_thread(user.id, title=user_query[:50])
+
+    user_id = user.user_id_str
+    logger.info(f"Incoming Real-time Streaming Request: '{user_query}' | Thread: {thread_id} | User: {user_id}")
 
     config = {
         "configurable": {
@@ -388,10 +441,16 @@ async def plan_stream(payload: TravelRequest):
 
 # Real-time Streaming Resume Endpoint (SSE)
 @app.post("/api/plan/resume/stream")
-async def resume_stream(payload: ResumeRequest):
+async def resume_stream(
+    payload: ResumeRequest,
+    user: AuthenticatedUser = Depends(check_rate_limit_for("resume")),
+):
     thread_id = payload.thread_id.strip() if payload.thread_id else ""
     if not thread_id:
         raise HTTPException(status_code=400, detail="thread_id is required.")
+
+    if not verify_thread_ownership(user.id, thread_id):
+        raise HTTPException(status_code=404, detail="Thread not found")
 
     feedback = payload.feedback.strip() if payload.feedback else ""
     if len(feedback) > 1500:
@@ -404,8 +463,8 @@ async def resume_stream(payload: ResumeRequest):
             logger.warning(f"Streaming resume feedback blocked by guardrail | Thread: {thread_id} | Reason: {reason}")
             raise HTTPException(status_code=400, detail=f"Feedback rejected by safety guardrail: {reason}")
 
-    user_id = "default_user"
-    logger.info(f"Incoming Streaming Resume: Thread={thread_id} | Approved={payload.approved} | Feedback='{feedback}'")
+    user_id = user.user_id_str
+    logger.info(f"Incoming Streaming Resume: Thread={thread_id} | User={user_id} | Approved={payload.approved} | Feedback='{feedback}'")
 
     config = {
         "configurable": {

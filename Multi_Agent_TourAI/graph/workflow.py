@@ -11,7 +11,7 @@ from Multi_Agent_TourAI.agents.maps_agent import maps_agent
 from Multi_Agent_TourAI.agents.final_agent import final_response_agent
 from Multi_Agent_TourAI.memory.checkpointer import get_checkpointer
 from Multi_Agent_TourAI.memory.store import get_store
-from Multi_Agent_TourAI.guardrails.inputguardrail import input_guardrail, guardrail_blocked
+from Multi_Agent_TourAI.guardrails.inputguardrail import input_guardrail, guardrail_blocked, check_input_safety
 from Multi_Agent_TourAI.guardrails.outputguardrail import output_guardrail
 from Multi_Agent_TourAI.agents.supervisor_agent import supervisor_agent
 from Multi_Agent_TourAI.agents.approval_agent import human_approval_agent
@@ -418,10 +418,20 @@ def resume_travel_agent(
     if not thread_id:
         raise ValueError("thread_id is required to resume a travel plan.")
 
+    clean_feedback = (feedback or "").strip()
+    if len(clean_feedback) > 1500:
+        raise ValueError("Feedback exceeds maximum allowed length of 1500 characters.")
+
+    if clean_feedback:
+        allowed, reason = check_input_safety(clean_feedback, is_feedback=True)
+        if not allowed:
+            logger.warning(f"Workflow resume blocked by input guardrail: {reason}")
+            raise ValueError(f"Feedback rejected by security guardrail: {reason}")
+
     if not user_id:
         user_id = "default_user"
 
-    logger.info(f"Resuming Workflow | Thread: {thread_id} | Approved: {approved} | Feedback: '{feedback}'")
+    logger.info(f"Resuming Workflow | Thread: {thread_id} | Approved: {approved} | Feedback: '{clean_feedback}'")
 
     config = {
         "configurable": {
@@ -435,7 +445,7 @@ def resume_travel_agent(
         Command(
             resume={
                 "approved": approved,
-                "feedback": feedback.strip(),
+                "feedback": clean_feedback,
             }
         ),
         config=config,

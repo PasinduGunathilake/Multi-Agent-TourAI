@@ -10,6 +10,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from Multi_Agent_TourAI.graph.workflow import run_travel_agent, resume_travel_agent
+from Multi_Agent_TourAI.guardrails.inputguardrail import check_input_safety
+from Multi_Agent_TourAI.guardrails.outputguardrail import sanitize_text
 from Multi_Agent_TourAI.utils import get_logger
 # nested event loops for async call in fast api
 import nest_asyncio
@@ -36,13 +38,13 @@ app.add_middleware(
 
 # Request , Response data models
 class TravelRequest(BaseModel):
-    query: str = Field(..., example="Plan a 5 days trip to Dubai from Sri Lanka")
-    thread_id: str | None = Field(default=None, example="user_session_123")
+    query: str = Field(..., max_length=1500, example="Plan a 5 days trip to Dubai from Sri Lanka")
+    thread_id: str | None = Field(default=None, max_length=100, example="user_session_123")
 
 class ResumeRequest(BaseModel):
-    thread_id: str = Field(..., example="user_session_123")
+    thread_id: str = Field(..., max_length=100, example="user_session_123")
     approved: bool = Field(..., example=True)
-    feedback: str = Field(default="", example="Please add more budget-friendly hotel options.")
+    feedback: str = Field(default="", max_length=1500, example="Please add more budget-friendly hotel options.")
 
 class TravelResponse(BaseModel):
     thread_id: str
@@ -86,18 +88,33 @@ async def plan(payload: TravelRequest):
 
 @app.post("/api/plan/resume", response_model=TravelResponse)
 async def resume(payload: ResumeRequest):
-    if not payload.thread_id:
+    thread_id = payload.thread_id.strip() if payload.thread_id else ""
+    if not thread_id:
         raise HTTPException(status_code=400, detail="thread_id is required to resume workflow.")
 
-    logger.info(f"Incoming Resume Request: Thread={payload.thread_id} | Approved={payload.approved} | Feedback='{payload.feedback}'")
+    feedback = payload.feedback.strip() if payload.feedback else ""
+    if len(feedback) > 1500:
+        raise HTTPException(status_code=400, detail="Feedback exceeds maximum length of 1500 characters.")
+
+    # Validate feedback through input guardrail before resuming workflow
+    if feedback:
+        allowed, reason = check_input_safety(feedback, is_feedback=True)
+        if not allowed:
+            logger.warning(f"Resume feedback blocked by input guardrail | Thread: {thread_id} | Reason: {reason}")
+            raise HTTPException(status_code=400, detail=f"Feedback rejected by safety guardrail: {reason}")
+
+    logger.info(f"Incoming Resume Request: Thread={thread_id} | Approved={payload.approved} | Feedback='{feedback}'")
     try:
         result = resume_travel_agent(
-            thread_id=payload.thread_id,
+            thread_id=thread_id,
             approved=payload.approved,
-            feedback=payload.feedback,
+            feedback=feedback,
         )
         logger.info(f"Workflow Resumed | Total LLM Calls: {result.get('llm_calls', 0)}")
         return result
+    except ValueError as ve:
+        logger.warning(f"Validation error resuming workflow: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"Error resuming workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -246,15 +263,13 @@ async def plan_stream(payload: TravelRequest):
                         payload_val = interrupt_val if isinstance(interrupt_val, dict) else {"question": str(interrupt_val)}
 
                         logger.info(f"Workflow paused at HITL interrupt | Thread: {thread_id}")
+                        raw_draft = payload_val.get("draft_itinerary") or accumulated_state.get("itinerary", "")
+                        sanitized_draft, _ = sanitize_text(raw_draft)
                         approval_payload = {
                             "event": "approval_required",
                             "thread_id": thread_id,
                             "question": payload_val.get("question", "Do you approve this draft itinerary?"),
-                            "draft_itinerary": payload_val.get("draft_itinerary") or accumulated_state.get("itinerary", ""),
-                            "flight_results": accumulated_state.get("flight_results", ""),
-                            "hotel_results": accumulated_state.get("hotel_results", ""),
-                            "weather_results": accumulated_state.get("weather_results", ""),
-                            "maps_results": accumulated_state.get("maps_results", ""),
+                            "draft_itinerary": sanitized_draft,
                             "llm_calls": accumulated_state.get("llm_calls", 0),
                         }
                         yield f"data: {json.dumps(approval_payload)}\n\n"
@@ -268,15 +283,23 @@ async def plan_stream(payload: TravelRequest):
                         yield f"data: {json.dumps({'event': 'fan_out_start', 'message': 'Dispatched specialist MCP agents'})}\n\n"
                         await asyncio.sleep(0.01)
 
-                    # Extract node payload
+                    # Handle immediate early exit if blocked by input guardrail
+                    if node_name == "guardrail_blocked":
+                        block_msg = accumulated_state.get("guardrail_reason") or "I can only help with travel-planning requests (destinations, flights, hotels, weather, budgets, and itineraries)."
+                        sanitized_reason, _ = sanitize_text(block_msg)
+                        import re
+                        tokens = re.findall(r'\S+|\s+', sanitized_reason)
+                        for token in tokens:
+                            yield f"data: {json.dumps({'event': 'token', 'token': token})}\n\n"
+                            await asyncio.sleep(0.015)
+                        yield f"data: {json.dumps({'event': 'complete', 'thread_id': thread_id, 'answer': sanitized_reason, 'llm_calls': accumulated_state.get('llm_calls', 0)})}\n\n"
+                        return
+
+                    # Extract safe node progress payload (minimal metadata, no raw tool results)
                     node_payload = {
                         "event": "node_complete",
                         "node": node_name,
-                        "flight_results": accumulated_state.get("flight_results", ""),
-                        "hotel_results": accumulated_state.get("hotel_results", ""),
-                        "weather_results": accumulated_state.get("weather_results", ""),
-                        "maps_results": accumulated_state.get("maps_results", ""),
-                        "itinerary": accumulated_state.get("itinerary", ""),
+                        "intent": accumulated_state.get("intent", ""),
                         "llm_calls": accumulated_state.get("llm_calls", 0),
                     }
 
@@ -314,14 +337,13 @@ async def plan_stream(payload: TravelRequest):
                 payload_val = interrupt_val if isinstance(interrupt_val, dict) else {"question": str(interrupt_val)}
 
                 logger.info(f"Workflow paused for Human-in-the-Loop approval | Thread: {thread_id}")
+                raw_draft = payload_val.get("draft_itinerary") or accumulated_state.get("itinerary", "")
+                sanitized_draft, _ = sanitize_text(raw_draft)
                 approval_payload = {
                     "event": "approval_required",
                     "thread_id": thread_id,
                     "question": payload_val.get("question", "Do you approve this draft itinerary?"),
-                    "draft_itinerary": payload_val.get("draft_itinerary") or accumulated_state.get("itinerary", ""),
-                    "flight_results": accumulated_state.get("flight_results", ""),
-                    "hotel_results": accumulated_state.get("hotel_results", ""),
-                    "weather_results": accumulated_state.get("weather_results", ""),
+                    "draft_itinerary": sanitized_draft,
                     "llm_calls": accumulated_state.get("llm_calls", 0),
                 }
                 yield f"data: {json.dumps(approval_payload)}\n\n"
@@ -345,11 +367,6 @@ async def plan_stream(payload: TravelRequest):
                 "event": "complete",
                 "thread_id": thread_id,
                 "answer": final_answer,
-                "flight_results": accumulated_state.get("flight_results", ""),
-                "hotel_results": accumulated_state.get("hotel_results", ""),
-                "weather_results": accumulated_state.get("weather_results", ""),
-                "maps_results": accumulated_state.get("maps_results", ""),
-                "itinerary": accumulated_state.get("itinerary", ""),
                 "llm_calls": accumulated_state.get("llm_calls", 0),
             }
             yield f"data: {json.dumps(complete_payload)}\n\n"
@@ -372,12 +389,23 @@ async def plan_stream(payload: TravelRequest):
 # Real-time Streaming Resume Endpoint (SSE)
 @app.post("/api/plan/resume/stream")
 async def resume_stream(payload: ResumeRequest):
-    if not payload.thread_id:
+    thread_id = payload.thread_id.strip() if payload.thread_id else ""
+    if not thread_id:
         raise HTTPException(status_code=400, detail="thread_id is required.")
 
-    thread_id = payload.thread_id
+    feedback = payload.feedback.strip() if payload.feedback else ""
+    if len(feedback) > 1500:
+        raise HTTPException(status_code=400, detail="Feedback exceeds maximum length of 1500 characters.")
+
+    # Validate feedback through input guardrail before resuming streaming workflow
+    if feedback:
+        allowed, reason = check_input_safety(feedback, is_feedback=True)
+        if not allowed:
+            logger.warning(f"Streaming resume feedback blocked by guardrail | Thread: {thread_id} | Reason: {reason}")
+            raise HTTPException(status_code=400, detail=f"Feedback rejected by safety guardrail: {reason}")
+
     user_id = "default_user"
-    logger.info(f"Incoming Streaming Resume: Thread={thread_id} | Approved={payload.approved} | Feedback='{payload.feedback}'")
+    logger.info(f"Incoming Streaming Resume: Thread={thread_id} | Approved={payload.approved} | Feedback='{feedback}'")
 
     config = {
         "configurable": {
@@ -393,7 +421,7 @@ async def resume_stream(payload: ResumeRequest):
             resume_command = Command(
                 resume={
                     "approved": payload.approved,
-                    "feedback": payload.feedback.strip(),
+                    "feedback": feedback,
                 }
             )
 
@@ -448,11 +476,6 @@ async def resume_stream(payload: ResumeRequest):
                 "event": "complete",
                 "thread_id": thread_id,
                 "answer": str(final_answer),
-                "flight_results": accumulated_state.get("flight_results", ""),
-                "hotel_results": accumulated_state.get("hotel_results", ""),
-                "weather_results": accumulated_state.get("weather_results", ""),
-                "maps_results": accumulated_state.get("maps_results", ""),
-                "itinerary": accumulated_state.get("itinerary", ""),
                 "llm_calls": accumulated_state.get("llm_calls", 0),
             }
             yield f"data: {json.dumps(complete_payload)}\n\n"

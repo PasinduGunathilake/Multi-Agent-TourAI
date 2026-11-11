@@ -33,7 +33,7 @@ SAFE_FALLBACK_RESPONSE = (
 
 
 def _extract_json(text: Any) -> dict[str, Any]:
-    """Extracts the first valid JSON object from model response."""
+    """Extracts the first valid JSON object from model response with code-block tolerance."""
     if isinstance(text, list):
         text = "".join(
             item.get("text", str(item)) if isinstance(item, dict)
@@ -43,11 +43,14 @@ def _extract_json(text: Any) -> dict[str, Any]:
     elif not isinstance(text, str):
         text = str(text or "")
 
-    start = text.find("{")
-    end = text.rfind("}")
+    cleaned = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.MULTILINE)
+    cleaned = re.sub(r"\s*```$", "", cleaned.strip(), flags=re.MULTILINE)
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
     if start == -1 or end == -1 or end < start:
         raise ValueError("Model did not return a valid JSON object.")
-    return json.loads(text[start : end + 1])
+    return json.loads(cleaned[start : end + 1])
 
 
 def sanitize_text(text: Any) -> tuple[str, bool]:
@@ -152,18 +155,19 @@ def output_guardrail(state: TravelState):
             HumanMessage(content=audit_prompt)
         ])
         audit_res = _extract_json(response.content)
-        is_safe = bool(audit_res.get("is_safe", True))
-        action = str(audit_res.get("action", "allow")).lower().strip()
+        is_safe = bool(audit_res.get("is_safe", False))
+        action = str(audit_res.get("action", "allow" if is_safe else "block")).lower().strip()
         reason = str(audit_res.get("reason", "")).strip()
 
         if not is_safe and action == "allow":
             action = "block"
 
     except Exception as e:
-        # Fail-open strategy: LLM audit failure should not break valid user responses
-        logger.warning(f"Output Guardrail LLM audit fallback (fail-open): {e}")
-        action = "allow" if not regex_modified else "sanitize"
-        reason = "Audit fallback allowed response"
+        # Safe failure handling (fail-closed): An LLM audit failure or malformed JSON
+        # must not allow unverified, potentially unsafe content through.
+        logger.error(f"Output Guardrail LLM audit error (safe-handling): {e}", exc_info=True)
+        action = "block"
+        reason = "Safety verification could not verify the generated response."
 
     # Layer 3: Decision & State Dispatch
     if action == "block":

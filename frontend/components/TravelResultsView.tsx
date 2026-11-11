@@ -19,7 +19,6 @@ import {
   Compass,
 } from "lucide-react";
 import remarkGfm from "remark-gfm";
-import rehypeRaw from "rehype-raw";
 import { MessageFooter, MessageAction } from "@/components/ui/message";
 
 function cleanMarkdown(text: string): string {
@@ -113,7 +112,6 @@ export default function TravelResultsView({
       <div className="text-[15px] text-neutral-200 leading-relaxed font-sans space-y-4">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeRaw]}
           components={{
             h1: ({ children }) => (
               <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight mt-6 mb-3">
@@ -211,16 +209,19 @@ export default function TravelResultsView({
               </td>
             ),
             hr: () => <hr className="my-6 border-white/10" />,
-            a: ({ href, children }) => (
-              <a
-                href={href}
-                target="_blank"
-                rel="noreferrer"
-                className="text-teal-400 hover:text-teal-300 underline underline-offset-2 transition-colors"
-              >
-                {children}
-              </a>
-            ),
+            a: ({ href, children }) => {
+              const isSafe = href && /^(https?:\/\/|mailto:)/i.test(href.trim());
+              return (
+                <a
+                  href={isSafe ? href : "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-teal-400 hover:text-teal-300 underline underline-offset-2 transition-colors"
+                >
+                  {children}
+                </a>
+              );
+            },
           }}
         >
           {cleanedPlan}

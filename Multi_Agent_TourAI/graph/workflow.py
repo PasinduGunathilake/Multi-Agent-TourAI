@@ -350,15 +350,17 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
     if not thread_id:
         thread_id = f"user_{uuid.uuid4().hex}"
 
-    if not user_id:
-        user_id = "default_user"
+    if not user_id or not str(user_id).strip():
+        logger.error("[SECURITY] Attempted to execute run_travel_agent without authenticated user_id.")
+        raise ValueError("user_id is mandatory and must be provided by the authenticated context.")
 
-    logger.info(f"Initializing Workflow | Thread: {thread_id} | User: {user_id}  | Query: '{user_input}'")
+    clean_user_id = str(user_id).strip()
+    logger.info(f"Initializing Workflow | Thread: {thread_id} | User: {clean_user_id}  | Query: '{user_input}'")
 
     config = {
         "configurable": {
-            "thread_id": thread_id, # Checkpointer - current session (short term)
-            "user_id": user_id,      # Store - permanent user profile (long term)
+            "thread_id": thread_id,    # Checkpointer - current session (short term)
+            "user_id": clean_user_id,  # Store - permanent user profile (long term)
         }
     }
 
@@ -428,15 +430,17 @@ def resume_travel_agent(
             logger.warning(f"Workflow resume blocked by input guardrail: {reason}")
             raise ValueError(f"Feedback rejected by security guardrail: {reason}")
 
-    if not user_id:
-        user_id = "default_user"
+    if not user_id or not str(user_id).strip():
+        logger.error("[SECURITY] Attempted to execute resume_travel_agent without authenticated user_id.")
+        raise ValueError("user_id is mandatory and must be provided by the authenticated context.")
 
-    logger.info(f"Resuming Workflow | Thread: {thread_id} | Approved: {approved} | Feedback: '{clean_feedback}'")
+    clean_user_id = str(user_id).strip()
+    logger.info(f"Resuming Workflow | Thread: {thread_id} | User: {clean_user_id} | Approved: {approved} | Feedback: '{clean_feedback}'")
 
     config = {
         "configurable": {
             "thread_id": thread_id,
-            "user_id": user_id,
+            "user_id": clean_user_id,
         }
     }
 

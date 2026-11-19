@@ -110,6 +110,7 @@ Intents:
 STRICT JSON OUTPUT FORMAT ONLY:
 {
   "intent": "new_plan" | "specific_query" | "follow_up",
+  "destination": "Target city or country name, or empty string if not applicable/ambiguous",
   "selected_agents": ["flight_agent", ...],
   "reasoning": "brief 1-sentence reason"
 }

@@ -1,43 +1,47 @@
 import re
-import asyncio
 from langchain_core.messages import AIMessage
 from Multi_Agent_TourAI.graph.state import TravelState
 from Multi_Agent_TourAI.mcp.geoapify_mcp import (geoapify_mcp_search_places, geoapify_mcp_calculate_route,)
 from Multi_Agent_TourAI.llms.llm import fast_llm
 from Multi_Agent_TourAI.config.prompts import DESTINATION_EXTRACTOR_PROMPT_TEMPLATE
-from Multi_Agent_TourAI.utils import get_logger, log_execution
+from Multi_Agent_TourAI.utils import get_logger, log_execution, run_async_safely
 
 logger = get_logger(__name__)
 
+# Max character limit for maps search results to optimize prompt tokens
+MAX_MAPS_CHAR_LIMIT = 1500
 
-def extract_destination(query: str) -> str:
-    """Extracts destination city from user travel query using fast_llm."""
-    try:
-        prompt = DESTINATION_EXTRACTOR_PROMPT_TEMPLATE.format(query=query)
-        response = fast_llm.invoke(prompt)
-        raw_city = response.content.strip(" .\n\"'")
-        clean_city = re.sub(r'^(destination|city|location|target)\s*:\s*', '', raw_city, flags=re.IGNORECASE).strip(" .\n\"'")
-        return clean_city if clean_city else query
-    except Exception as e:
-        logger.warning(f"Destination extraction fallback: {e}")
-        return query
+
+def extract_destination(query: str, state_destination: str = "") -> str:
+    """
+    Extracts destination city: reuses state_destination from supervisor analysis if provided,
+    avoiding redundant LLM extraction calls. Falls back gracefully to user_query without extra LLM calls.
+    """
+    if state_destination and str(state_destination).strip():
+        clean = str(state_destination).strip(" .\n\"'")
+        clean = re.sub(r'^(destination|city|location|target)\s*:\s*', '', clean, flags=re.IGNORECASE).strip(" .\n\"'")
+        if clean.lower() not in ("none", "null", "n/a", "not applicable", "unknown", "ambiguous", "empty", "false"):
+            return clean
+    return (query or "").strip()
 
 
 @log_execution
 def maps_agent(state: TravelState):
     """
     Maps, Places & Routing Agent Node for LangGraph:
-    1. Reads user_query from shared state.
+    1. Reads user_query and destination from shared state.
     2. Identifies user intent: Route/Distance, Cafes/Dining, or Top Attractions.
-    3. Calls Geoapify Remote MCP tools asynchronously.
-    4. Updates shared state with 'maps_results'.
+    3. Calls Geoapify Remote MCP tools asynchronously via loop-safe bridge.
+    4. Bounds output context to optimize downstream prompt tokens.
+    5. Updates shared state with 'maps_results'.
     """
     query = state.get("user_query", "")
-    city = extract_destination(query)
+    city = extract_destination(query, state_destination=state.get("destination", ""))
     query_lower = query.lower()
     logger.info(f"Maps Agent: Processing query for '{city}' (Query: '{query}')...")
 
     maps_data = ""
+    llm_calls_count = 0
     try:
         # Case 1: Route / Distance query between two places
         if any(kw in query_lower for kw in ["how far", "distance between", "route from", "drive from", "travel from", "to get to"]):
@@ -47,6 +51,7 @@ def maps_agent(state: TravelState):
                 "Example: Tokyo | Kyoto"
             )
             route_resp = fast_llm.invoke(route_extract_prompt).content.strip()
+            llm_calls_count = 1
             if "|" in route_resp:
                 parts = [p.strip() for p in route_resp.split("|")]
                 if len(parts) >= 2:
@@ -63,22 +68,25 @@ def maps_agent(state: TravelState):
                         mode = "transit"
 
                     logger.info(f"Maps Agent: Calculating route from '{origin_query}' to '{dest_query}' via {mode}...")
-                    maps_data = asyncio.run(geoapify_mcp_calculate_route(origin_query, dest_query, mode=mode))
+                    maps_data = run_async_safely(geoapify_mcp_calculate_route(origin_query, dest_query, mode=mode))
 
         # Case 2: Food / Dining / Cafe specific query
         if not maps_data:
             if any(kw in query_lower for kw in ["cafe", "coffee", "bakery"]):
                 logger.info(f"Maps Agent: Searching cafes in '{city}'...")
-                maps_data = asyncio.run(geoapify_mcp_search_places(city, category="catering.cafe", limit=5))
+                maps_data = run_async_safely(geoapify_mcp_search_places(city, category="catering.cafe", limit=5))
             elif any(kw in query_lower for kw in ["restaurant", "food", "dining", "lunch", "dinner", "eat"]):
                 logger.info(f"Maps Agent: Searching restaurants in '{city}'...")
-                maps_data = asyncio.run(geoapify_mcp_search_places(city, category="catering.restaurant", limit=5))
+                maps_data = run_async_safely(geoapify_mcp_search_places(city, category="catering.restaurant", limit=5))
 
         # Case 3: Default - Tourist Attractions & Sights for Itinerary
         if not maps_data:
             logger.info(f"Maps Agent: Searching top tourist attractions in '{city}'...")
-            maps_data = asyncio.run(geoapify_mcp_search_places(city, category="tourism.sights", limit=5))
+            maps_data = run_async_safely(geoapify_mcp_search_places(city, category="tourism.sights", limit=5))
 
+        # Bound context length for downstream LLM prompts
+        s = str(maps_data or "").strip()
+        maps_data = s[:MAX_MAPS_CHAR_LIMIT] + ("..." if len(s) > MAX_MAPS_CHAR_LIMIT else "")
         logger.info(f"Maps Agent: Successfully retrieved location data for '{city}'.")
 
     except Exception as error:
@@ -88,7 +96,7 @@ def maps_agent(state: TravelState):
     return {
         "maps_results": maps_data,
         "messages": [AIMessage(content=f"Location and maps details fetched for {city}.")],
-        "llm_calls": 1,
+        "llm_calls": llm_calls_count,
     }
 
 

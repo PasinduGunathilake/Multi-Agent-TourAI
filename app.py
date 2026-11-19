@@ -1,33 +1,66 @@
 import os
+import re
 import json
 import uuid
 import asyncio
 import uvicorn
-from fastapi.responses import StreamingResponse
+import urllib.parse
+from typing import Any
+from dotenv import load_dotenv
+import nest_asyncio
+from fastapi.responses import StreamingResponse, RedirectResponse
 from langchain_core.messages import HumanMessage
-from Multi_Agent_TourAI.graph.workflow import travel_graph
 from langgraph.types import Command
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Response, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from Multi_Agent_TourAI.graph.workflow import run_travel_agent, resume_travel_agent
+from Multi_Agent_TourAI.graph.workflow import travel_graph, run_travel_agent, resume_travel_agent
 from Multi_Agent_TourAI.guardrails.inputguardrail import check_input_safety
 from Multi_Agent_TourAI.guardrails.outputguardrail import sanitize_text
 from Multi_Agent_TourAI.auth import (
     AuthenticatedUser,
     get_current_user,
+    get_optional_current_user,
     check_rate_limit_for,
     create_user_thread,
     verify_thread_ownership,
     get_user_threads,
     safe_delete_user_thread,
+    RegisterRequest,
+    LoginRequest,
+    RequestPasswordSetupRequest,
+    CompletePasswordSetupRequest,
+    AuthResponse,
+    AppUserPublic,
+    create_access_token,
+    hash_password,
+    verify_password,
+    validate_password,
+    create_session,
+    rotate_session,
+    revoke_session_by_token,
+    revoke_all_user_sessions,
+    set_refresh_cookie,
+    clear_refresh_cookie,
+    RefreshTokenReusedError,
+    RefreshTokenRecentlyRotatedError,
+    generate_google_auth_url,
+    process_google_callback,
+)
+from Multi_Agent_TourAI.auth.auth_repository import (
+    get_user_by_email,
+    get_user_by_id,
+    get_email_identity,
+    create_user_with_email_identity,
+    create_verification_token,
+    complete_password_setup_with_token,
 )
 from Multi_Agent_TourAI.utils import get_logger
-# nested event loops for async call in fast api
-import nest_asyncio
-nest_asyncio.apply()
 
 logger = get_logger("Multi_Agent_TourAI.api")
+
+nest_asyncio.apply() # Apply nested event loops for async calls within FastAPI runtime
+load_dotenv()
 
 # fastapi app
 app = FastAPI(
@@ -50,13 +83,13 @@ app.add_middleware(
 
 # Request , Response data models
 class TravelRequest(BaseModel):
-    query: str = Field(..., max_length=1500, example="Plan a 5 days trip to Dubai from Sri Lanka")
-    thread_id: str | None = Field(default=None, max_length=100, example="user_session_123")
+    query: str = Field(..., max_length=1500, examples=["Plan a 5 days trip to Dubai from Sri Lanka"])
+    thread_id: str | None = Field(default=None, max_length=100, examples=["user_session_123"])
 
 class ResumeRequest(BaseModel):
-    thread_id: str = Field(..., max_length=100, example="user_session_123")
-    approved: bool = Field(..., example=True)
-    feedback: str = Field(default="", max_length=1500, example="Please add more budget-friendly hotel options.")
+    thread_id: str = Field(..., max_length=100, examples=["user_session_123"])
+    approved: bool = Field(..., examples=[True])
+    feedback: str = Field(default="", max_length=1500, examples=["Please add more budget-friendly hotel options."])
 
 class TravelResponse(BaseModel):
     thread_id: str
@@ -76,10 +109,249 @@ class TravelResponse(BaseModel):
     output_guardrail_reason: str | None = ""
 
 
+# Internal Helpers & Constants
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+def _to_public_user(user_dict: dict) -> AppUserPublic:
+    """Safely maps a database user row/dict to the public AppUserPublic schema."""
+    return AppUserPublic(
+        id=str(user_dict["id"]),
+        email=user_dict["email"],
+        display_name=user_dict.get("display_name"),
+        avatar_url=user_dict.get("avatar_url"),
+        email_verified=user_dict.get("email_verified", False),
+        created_at=user_dict.get("created_at"),
+    )
+
+
+def _extract_text(raw_content: Any) -> str:
+    """Extracts plain text from LangChain message content (string or list of parts)."""
+    if isinstance(raw_content, list):
+        return "".join(
+            p if isinstance(p, str) else p.get("text", str(p))
+            for p in raw_content
+        )
+    return str(raw_content or "")
+
+
+def _build_approval_payload(thread_id: str, interrupt_source: Any, accumulated_state: dict) -> dict:
+    """Constructs a sanitized HITL approval event payload."""
+    interrupt_val = getattr(interrupt_source, "value", interrupt_source) if interrupt_source else {}
+    payload_val = interrupt_val if isinstance(interrupt_val, dict) else {"question": str(interrupt_val)}
+    raw_draft = payload_val.get("draft_itinerary") or accumulated_state.get("itinerary", "")
+    sanitized_draft, _ = sanitize_text(raw_draft)
+    return {
+        "event": "approval_required",
+        "thread_id": thread_id,
+        "question": payload_val.get("question", "Do you approve this draft itinerary?"),
+        "draft_itinerary": sanitized_draft,
+        "llm_calls": accumulated_state.get("llm_calls", 0),
+    }
+
+
+async def _stream_token_chunks(text: str):
+    """Yields token events word-by-word with realistic typewriter pacing."""
+    tokens = re.findall(r"\S+|\s+", text)
+    for token in tokens:
+        yield f"data: {json.dumps({'event': 'token', 'token': token})}\n\n"
+        await asyncio.sleep(0.015)
+
+
 # API endpoints
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "services": "Multi_Agent_TourAI"}
+
+
+# Authentication Endpoints 
+
+@app.post("/api/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+async def auth_register(payload: RegisterRequest, response: Response):
+    valid, reason = validate_password(payload.password)
+    if not valid:
+        raise HTTPException(status_code=400, detail=reason)
+
+    pwd_hash = hash_password(payload.password)
+    try:
+        user_row = create_user_with_email_identity(
+            email=payload.email,
+            password_hash=pwd_hash,
+            display_name=payload.display_name,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    user_id = user_row["id"]
+    session_id, raw_refresh_token = create_session(user_id)
+    set_refresh_cookie(response, raw_refresh_token)
+    access_token = create_access_token(user_id, user_row["email"], session_id=session_id)
+
+    return AuthResponse(
+        access_token=access_token,
+        user=_to_public_user(user_row),
+    )
+
+
+@app.post("/api/auth/login", response_model=AuthResponse)
+async def auth_login(payload: LoginRequest, response: Response):
+    email = payload.email.strip().lower()
+    user_row = get_user_by_email(email)
+    identity = get_email_identity(email)
+
+    invalid_creds_exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid email or password.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    if not user_row or not identity:
+        raise invalid_creds_exc
+
+    # Check if this is an existing migrated user requiring initial password setup
+    if identity.get("password_hash") is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CREDENTIAL_SETUP_REQUIRED: Initial password setup is required for this account. Please request a verification link.",
+        )
+
+    if not verify_password(identity["password_hash"], payload.password):
+        raise invalid_creds_exc
+
+    user_id = user_row["id"]
+    session_id, raw_refresh_token = create_session(user_id)
+    set_refresh_cookie(response, raw_refresh_token)
+    access_token = create_access_token(user_id, user_row["email"], session_id=session_id)
+
+    return AuthResponse(
+        access_token=access_token,
+        user=_to_public_user(user_row),
+    )
+
+
+@app.post("/api/auth/request-password-setup")
+async def auth_request_password_setup(payload: RequestPasswordSetupRequest):
+    email = payload.email.strip().lower()
+    user_row = get_user_by_email(email)
+
+    if user_row:
+        token = create_verification_token(user_row["id"], token_type="password_setup", expires_in_minutes=15)
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        setup_url = f"{frontend_url}/auth/setup-password?token={token}"
+        logger.info(f"[AUTH ONBOARDING] Password setup link for {email}: {setup_url}")
+
+    return {"message": "If an account exists with this email address, a password setup link has been generated."}
+
+
+@app.post("/api/auth/complete-password-setup", response_model=AuthResponse)
+async def auth_complete_password_setup(payload: CompletePasswordSetupRequest, response: Response):
+    valid, reason = validate_password(payload.new_password)
+    if not valid:
+        raise HTTPException(status_code=400, detail=reason)
+
+    pwd_hash = hash_password(payload.new_password)
+    updated_user = complete_password_setup_with_token(payload.token, pwd_hash, token_type="password_setup")
+    if not updated_user:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token.")
+
+    user_id = updated_user["id"]
+    session_id, raw_refresh_token = create_session(user_id)
+    set_refresh_cookie(response, raw_refresh_token)
+    access_token = create_access_token(user_id, updated_user["email"], session_id=session_id)
+
+    return AuthResponse(
+        access_token=access_token,
+        user=_to_public_user(updated_user),
+    )
+
+
+@app.get("/api/auth/google")
+async def auth_google_redirect():
+    auth_url, state = generate_google_auth_url()
+    return {"auth_url": auth_url, "state": state}
+
+
+@app.get("/api/auth/google/callback")
+async def auth_google_callback(code: str, state: str):
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    try:
+        user_row = process_google_callback(code, state)
+    except Exception as e:
+        logger.error(f"[AUTH] Google OAuth callback error: {e}")
+        err_msg = urllib.parse.quote_plus(str(e))
+        return RedirectResponse(url=f"{frontend_url}?auth_error={err_msg}")
+
+    user_id = user_row["id"]
+    session_id, raw_refresh_token = create_session(user_id)
+    redirect = RedirectResponse(url=f"{frontend_url}?auth_success=true", status_code=status.HTTP_302_FOUND)
+    set_refresh_cookie(redirect, raw_refresh_token)
+    return redirect
+
+
+@app.get("/api/auth/me")
+async def auth_me(user: AuthenticatedUser = Depends(get_current_user)):
+    user_row = get_user_by_id(user.id)
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User account not found.")
+    return {"user": _to_public_user(user_row)}
+
+
+@app.post("/api/auth/refresh", response_model=AuthResponse)
+async def auth_refresh(request: Request, response: Response):
+    refresh_token = request.cookies.get("tourai_refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token cookie missing.")
+
+    try:
+        result = rotate_session(refresh_token)
+    except RefreshTokenRecentlyRotatedError:
+        # Legitimate concurrent race detected within grace window.
+        # Do not clear cookie (preserves winner's fresh cookie).
+        # Do not issue any token (prevents malicious replay).
+        raise HTTPException(
+            status_code=409,
+            detail="Refresh token already rotated. Please use current session.",
+        )
+    except RefreshTokenReusedError:
+        # Malicious reuse detected outside grace window: all sessions revoked.
+        clear_refresh_cookie(response)
+        raise HTTPException(
+            status_code=401,
+            detail="Session compromised: token reuse detected. All sessions terminated.",
+        )
+
+    if not result:
+        clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Invalid, expired, or revoked refresh token.")
+
+    user_dict, new_session_id, new_raw_token = result
+    set_refresh_cookie(response, new_raw_token)
+    access_token = create_access_token(user_dict["id"], user_dict["email"], session_id=new_session_id)
+
+    return AuthResponse(
+        access_token=access_token,
+        user=_to_public_user(user_dict),
+    )
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request, response: Response):
+    refresh_token = request.cookies.get("tourai_refresh_token")
+    if refresh_token:
+        revoke_session_by_token(refresh_token)
+    clear_refresh_cookie(response)
+    return {"status": "logged_out"}
+
+
+@app.post("/api/auth/logout-all")
+async def auth_logout_all(response: Response, user: AuthenticatedUser = Depends(get_current_user)):
+    revoke_all_user_sessions(user.id)
+    clear_refresh_cookie(response)
+    return {"status": "all_sessions_revoked"}
 
 @app.post("/api/plan", response_model=TravelResponse)
 async def plan(
@@ -180,14 +452,7 @@ async def get_thread_history(
         turns = []
         for i, msg in enumerate(messages):
             msg_type = getattr(msg, "type", "")
-            raw_content = getattr(msg, "content", "")
-            if isinstance(raw_content, list):
-                text_content = "".join(
-                    p if isinstance(p, str) else p.get("text", str(p))
-                    for p in raw_content
-                )
-            else:
-                text_content = str(raw_content or "")
+            text_content = _extract_text(getattr(msg, "content", ""))
 
             if msg_type in ("human", "user"):
                 turns.append({
@@ -312,19 +577,8 @@ async def plan_stream(
                     if node_name == "__interrupt__":
                         interrupt_items = node_output if isinstance(node_output, (list, tuple)) else [node_output]
                         first_interrupt = interrupt_items[0] if interrupt_items else None
-                        interrupt_val = getattr(first_interrupt, "value", first_interrupt) if first_interrupt else {}
-                        payload_val = interrupt_val if isinstance(interrupt_val, dict) else {"question": str(interrupt_val)}
-
                         logger.info(f"Workflow paused at HITL interrupt | Thread: {thread_id}")
-                        raw_draft = payload_val.get("draft_itinerary") or accumulated_state.get("itinerary", "")
-                        sanitized_draft, _ = sanitize_text(raw_draft)
-                        approval_payload = {
-                            "event": "approval_required",
-                            "thread_id": thread_id,
-                            "question": payload_val.get("question", "Do you approve this draft itinerary?"),
-                            "draft_itinerary": sanitized_draft,
-                            "llm_calls": accumulated_state.get("llm_calls", 0),
-                        }
+                        approval_payload = _build_approval_payload(thread_id, first_interrupt, accumulated_state)
                         yield f"data: {json.dumps(approval_payload)}\n\n"
                         return
 
@@ -340,11 +594,8 @@ async def plan_stream(
                     if node_name == "guardrail_blocked":
                         block_msg = accumulated_state.get("guardrail_reason") or "I can only help with travel-planning requests (destinations, flights, hotels, weather, budgets, and itineraries)."
                         sanitized_reason, _ = sanitize_text(block_msg)
-                        import re
-                        tokens = re.findall(r'\S+|\s+', sanitized_reason)
-                        for token in tokens:
-                            yield f"data: {json.dumps({'event': 'token', 'token': token})}\n\n"
-                            await asyncio.sleep(0.015)
+                        async for chunk in _stream_token_chunks(sanitized_reason):
+                            yield chunk
                         yield f"data: {json.dumps({'event': 'complete', 'thread_id': thread_id, 'answer': sanitized_reason, 'llm_calls': accumulated_state.get('llm_calls', 0)})}\n\n"
                         return
 
@@ -359,25 +610,10 @@ async def plan_stream(
                     if node_name == "output_guardrail":
                         messages = node_output.get("messages", [])
                         if messages:
-                            raw_content = messages[-1].content
-                            if isinstance(raw_content, list):
-                                # Handle list of text/dict blocks
-                                final_text = "".join(
-                                    part if isinstance(part, str) else part.get("text", str(part))
-                                    for part in raw_content
-                                )
-                            else:
-                                final_text = str(raw_content or "")
-
-                            # Notify node_complete without dumping full text at once
+                            final_text = _extract_text(messages[-1].content)
                             yield f"data: {json.dumps({'event': 'node_complete', 'node': 'final_agent', 'llm_calls': accumulated_state.get('llm_calls', 0)})}\n\n"
-                            
-                            # Stream tokens word-by-word with realistic typewriter timing (~60 words/sec)
-                            import re
-                            tokens = re.findall(r'\S+|\s+', final_text)
-                            for token in tokens:
-                                yield f"data: {json.dumps({'event': 'token', 'token': token})}\n\n"
-                                await asyncio.sleep(0.015)
+                            async for chunk in _stream_token_chunks(final_text):
+                                yield chunk
                     else:
                         yield f"data: {json.dumps(node_payload)}\n\n"
                         await asyncio.sleep(0.02)
@@ -386,35 +622,14 @@ async def plan_stream(
             post_stream_state = travel_graph.get_state(config)
             if post_stream_state.tasks and any(t.interrupts for t in post_stream_state.tasks):
                 interrupt_item = post_stream_state.tasks[0].interrupts[0]
-                interrupt_val = getattr(interrupt_item, "value", interrupt_item)
-                payload_val = interrupt_val if isinstance(interrupt_val, dict) else {"question": str(interrupt_val)}
-
                 logger.info(f"Workflow paused for Human-in-the-Loop approval | Thread: {thread_id}")
-                raw_draft = payload_val.get("draft_itinerary") or accumulated_state.get("itinerary", "")
-                sanitized_draft, _ = sanitize_text(raw_draft)
-                approval_payload = {
-                    "event": "approval_required",
-                    "thread_id": thread_id,
-                    "question": payload_val.get("question", "Do you approve this draft itinerary?"),
-                    "draft_itinerary": sanitized_draft,
-                    "llm_calls": accumulated_state.get("llm_calls", 0),
-                }
+                approval_payload = _build_approval_payload(thread_id, interrupt_item, accumulated_state)
                 yield f"data: {json.dumps(approval_payload)}\n\n"
                 return
 
             # Final complete event
             messages = accumulated_state.get("messages", [])
-            if messages:
-                raw_ans = messages[-1].content
-                if isinstance(raw_ans, list):
-                    final_answer = "".join(
-                        part if isinstance(part, str) else part.get("text", str(part))
-                        for part in raw_ans
-                    )
-                else:
-                    final_answer = str(raw_ans or "")
-            else:
-                final_answer = ""
+            final_answer = _extract_text(messages[-1].content) if messages else ""
 
             complete_payload = {
                 "event": "complete",
@@ -431,11 +646,7 @@ async def plan_stream(
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=_SSE_HEADERS,
     )
 
 
@@ -497,22 +708,10 @@ async def resume_stream(
                     if node_name == "output_guardrail":
                         messages = node_output.get("messages", [])
                         if messages:
-                            raw_content = messages[-1].content
-                            if isinstance(raw_content, list):
-                                final_text = "".join(
-                                    part if isinstance(part, str) else part.get("text", str(part))
-                                    for part in raw_content
-                                )
-                            else:
-                                final_text = str(raw_content or "")
-
+                            final_text = _extract_text(messages[-1].content)
                             yield f"data: {json.dumps({'event': 'node_complete', 'node': 'final_agent', 'llm_calls': accumulated_state.get('llm_calls', 0)})}\n\n"
-                            
-                            import re
-                            tokens = re.findall(r'\S+|\s+', final_text)
-                            for token in tokens:
-                                yield f"data: {json.dumps({'event': 'token', 'token': token})}\n\n"
-                                await asyncio.sleep(0.015)
+                            async for chunk in _stream_token_chunks(final_text):
+                                yield chunk
                     else:
                         node_payload = {
                             "event": "node_complete",
@@ -524,17 +723,13 @@ async def resume_stream(
 
             # Final complete event
             messages = accumulated_state.get("messages", [])
-            final_answer = accumulated_state.get("final_response") or (messages[-1].content if messages else "")
-            if isinstance(final_answer, list):
-                final_answer = "".join(
-                    part if isinstance(part, str) else part.get("text", str(part))
-                    for part in final_answer
-                )
+            final_raw = accumulated_state.get("final_response") or (messages[-1].content if messages else "")
+            final_answer = _extract_text(final_raw)
 
             complete_payload = {
                 "event": "complete",
                 "thread_id": thread_id,
-                "answer": str(final_answer),
+                "answer": final_answer,
                 "llm_calls": accumulated_state.get("llm_calls", 0),
             }
             yield f"data: {json.dumps(complete_payload)}\n\n"
@@ -546,11 +741,7 @@ async def resume_stream(
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=_SSE_HEADERS,
     )
 
 

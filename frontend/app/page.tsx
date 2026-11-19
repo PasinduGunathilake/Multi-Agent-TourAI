@@ -13,9 +13,11 @@ import ScrollReveal from "@/components/ScrollReveal";
 import HeroGlobe from "@/components/HeroGlobe";
 import { HeroHighlight } from "@/components/ui/hero-highlight";
 import { GlowingEffect } from "@/components/ui/glowing-effect";
-import { Plus } from "lucide-react";
+import { Plus, LogIn } from "lucide-react";
 import { TypewriterEffect, TypewriterWord } from "@/components/ui/typewriter-effect";
-
+import { useAuth } from "@/contexts/AuthContext";
+import AuthModal from "@/components/AuthModal";
+import { fetchThreadHistory, streamPlanTrip, streamResumeTrip } from "@/lib/api";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const makeId = () => `turn_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -49,14 +51,19 @@ const defaultAgentStatus = () => ({
 
 // ── Main Page Component ──────────────────────────────────────────────────────
 export default function HomePage() {
+  const { user, isLoading: authLoading, getToken } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
   const [hasStarted, setHasStarted] = useState(false);
   const [activeView, setActiveView] = useState<"chat" | "explore" | "telemetry">("chat");
   const [isPlanning, setIsPlanning] = useState(false);
-  const [sessionId, setSessionId] = useState<string>("session_default");
+  const [sessionId, setSessionId] = useState<string>("");
 
   useEffect(() => {
-    setSessionId(`session_${Date.now()}`);
-  }, []);
+    if (!sessionId) {
+      setSessionId(`session_${Date.now()}`);
+    }
+  }, [sessionId]);
 
   // ── Multi-Turn Thread ────────────────────────────────────────────────────
   const [turns, setTurns] = useState<ChatTurn[]>([]);
@@ -150,11 +157,36 @@ export default function HomePage() {
   // ── Load existing session (sidebar click) ────────────────────────────────
   const handleLoadSession = async (sid: string) => {
     if (!sid) return;
+
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
+
     isSwitchingSessionRef.current = true;
     setSessionId(sid);
     setIsPlanning(false);
 
-    // 1. Check tourai_session_${sid}
+    // 1. Fetch persisted state from authenticated PostgreSQL checkpointer
+    try {
+      const data = await fetchThreadHistory(sid, getToken);
+      if (data.turns && Array.isArray(data.turns) && data.turns.length > 0) {
+        const restored = (data.turns as unknown as ChatTurn[]).map((t) => ({
+          ...t,
+          isStreaming: false,
+          isResuming: false,
+        }));
+        setTurns(restored);
+        setHasStarted(true);
+        localStorage.setItem(`tourai_session_${sid}`, JSON.stringify(restored));
+        setTimeout(() => { isSwitchingSessionRef.current = false; }, 100);
+        return;
+      }
+    } catch (err) {
+      console.warn("Could not fetch session history from backend:", err);
+    }
+
+    // 2. Check cached tourai_session_${sid}
     try {
       const rawTurns = localStorage.getItem(`tourai_session_${sid}`);
       if (rawTurns) {
@@ -175,7 +207,7 @@ export default function HomePage() {
       console.warn("Could not parse saved turns from localStorage:", err);
     }
 
-    // 2. Check touraiJourneyHistory item.turns
+    // 3. Fallback: check touraiJourneyHistory item.turns
     try {
       const raw = localStorage.getItem("touraiJourneyHistory");
       if (raw) {
@@ -192,32 +224,6 @@ export default function HomePage() {
           setTimeout(() => { isSwitchingSessionRef.current = false; }, 100);
           return;
         }
-      }
-    } catch {}
-
-    // 3. Fallback: Fetch persisted state from PostgreSQL checkpointer
-    try {
-      const res = await fetch(`http://127.0.0.1:8000/api/history/${sid}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.turns && Array.isArray(data.turns) && data.turns.length > 0) {
-          setTurns(data.turns);
-          setHasStarted(true);
-          localStorage.setItem(`tourai_session_${sid}`, JSON.stringify(data.turns));
-          setTimeout(() => { isSwitchingSessionRef.current = false; }, 100);
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn("Could not fetch session history from backend:", err);
-    }
-
-    // 4. For older sessions that didn't have saved turns, create a user query turn from the title!
-    try {
-      const raw = localStorage.getItem("touraiJourneyHistory");
-      if (raw) {
-        const history: JourneySession[] = JSON.parse(raw);
-        const found = history.find((s) => s.sessionId === sid);
         if (found && found.title) {
           const fallbackTurns: ChatTurn[] = [
             {
@@ -243,6 +249,11 @@ export default function HomePage() {
   // ── Main Plan Trip Handler ───────────────────────────────────────────────
   const handlePlanTrip = async (searchQuery: string, _mode: string = "all") => {
     if (!searchQuery.trim() || isPlanning) return;
+
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
 
     setHasStarted(true);
     setIsPlanning(true);
@@ -272,224 +283,215 @@ export default function HomePage() {
     setTurns((prev) => [...prev, userTurn, assistantTurn]);
     saveSessionToHistory(searchQuery);
 
+    // If local temporary id, pass null so backend generates a verified UUID registered in user_threads
+    const backendThreadId = sessionId.startsWith("session_") ? null : sessionId;
+
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/plan/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, thread_id: sessionId }),
-      });
+      await streamPlanTrip(
+        searchQuery,
+        backendThreadId,
+        (ev) => {
+          if (ev.thread_id && ev.thread_id !== sessionId) {
+            setSessionId(ev.thread_id);
+          }
 
-      if (!res.ok || !res.body) throw new Error(`Stream failed: ${res.status}`);
+          // fan_out_start
+          if (ev.event === "fan_out_start") {
+            updateTurn(assistantTurnId, {
+              intent: "new_plan",
+              agentStatus: {
+                ...defaultAgentStatus(),
+                step: 1,
+                flightAgent: "running",
+                hotelAgent: "running",
+                weatherAgent: "running",
+                mapsAgent: "running",
+                currentAgent: "Fan-Out: Parallel Flight, Hotel, Weather & Maps Agents...",
+                elapsedMs: Date.now() - startTime,
+              },
+            });
+          }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
+          // node_complete
+          else if (ev.event === "node_complete") {
+            setTurns((prev) =>
+              prev.map((t) => {
+                if (t.id !== assistantTurnId) return t;
+                const s = t.agentStatus ?? defaultAgentStatus();
+                const elapsed = Date.now() - startTime;
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+                if (ev.node === "supervisor") {
+                  return {
+                    ...t,
+                    intent: ev.intent || t.intent,
+                    agentStatus: {
+                      ...s,
+                      currentAgent:
+                        ev.intent === "follow_up"
+                          ? "🧠 Recalling your travel context..."
+                          : ev.intent === "specific_query"
+                          ? "🔎 Consulting specialist agent..."
+                          : "🚀 Deploying agent swarm...",
+                      elapsedMs: elapsed,
+                    },
+                  };
+                }
+                if (ev.node === "flight_agent") {
+                  return {
+                    ...t,
+                    flightData: ev.flight_results || t.flightData,
+                    agentStatus: { ...s, flightAgent: "done", elapsedMs: elapsed },
+                  };
+                }
+                if (ev.node === "hotel_agent") {
+                  return {
+                    ...t,
+                    hotelData: ev.hotel_results || t.hotelData,
+                    agentStatus: { ...s, hotelAgent: "done", elapsedMs: elapsed },
+                  };
+                }
+                if (ev.node === "weather_agent") {
+                  return {
+                    ...t,
+                    weatherData: ev.weather_results || t.weatherData,
+                    agentStatus: { ...s, weatherAgent: "done", elapsedMs: elapsed },
+                  };
+                }
+                if (ev.node === "maps_agent") {
+                  return {
+                    ...t,
+                    mapsData: ev.maps_results || t.mapsData,
+                    agentStatus: { ...s, mapsAgent: "done", elapsedMs: elapsed },
+                  };
+                }
+                if (ev.node === "itinerary_agent") {
+                  return {
+                    ...t,
+                    itineraryData: ev.itinerary || t.itineraryData,
+                    agentStatus: {
+                      ...s,
+                      step: 2,
+                      itineraryAgent: "done",
+                      finalAgent: "running",
+                      currentAgent: "Fan-In: Synthesizing final dossier...",
+                      elapsedMs: elapsed,
+                    },
+                  };
+                }
+                if (ev.node === "final_agent") {
+                  return {
+                    ...t,
+                    agentStatus: {
+                      ...s,
+                      step: 3,
+                      finalAgent: "done",
+                      outputGuardrail: "running",
+                      currentAgent: "🛡️ Output Guardrail: Auditing safety & format...",
+                      elapsedMs: elapsed,
+                    },
+                  };
+                }
+                if (ev.node === "output_guardrail") {
+                  return {
+                    ...t,
+                    agentStatus: {
+                      ...s,
+                      step: 4,
+                      outputGuardrail: "done",
+                      currentAgent: "Complete",
+                      elapsedMs: elapsed,
+                    },
+                  };
+                }
+                return t;
+              })
+            );
+          }
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
+          // token — word-by-word typewriter
+          else if (ev.event === "token" && ev.token) {
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === assistantTurnId
+                  ? { ...t, planResult: (t.planResult || "") + ev.token }
+                  : t
+              )
+            );
+          }
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data: ")) continue;
-          try {
-            const ev = JSON.parse(trimmed.slice(6));
-
-            // fan_out_start
-            if (ev.event === "fan_out_start") {
-              updateTurn(assistantTurnId, {
-                intent: "new_plan",
-                agentStatus: {
-                  ...defaultAgentStatus(),
-                  step: 1,
-                  flightAgent: "running",
-                  hotelAgent: "running",
-                  weatherAgent: "running",
-                  mapsAgent: "running",
-                  currentAgent: "Fan-Out: Parallel Flight, Hotel, Weather & Maps Agents...",
-                  elapsedMs: Date.now() - startTime,
-                },
-              });
+          // approval_required — HITL pause
+          else if (ev.event === "approval_required") {
+            if (ev.thread_id) {
+              setSessionId(ev.thread_id);
             }
+            updateTurn(assistantTurnId, {
+              awaitingApproval: true,
+              approvalQuestion: ev.question || "Do you approve this itinerary?",
+              draftItinerary: ev.draft_itinerary,
+              flightData: ev.flight_results || undefined,
+              hotelData: ev.hotel_results || undefined,
+              weatherData: ev.weather_results || undefined,
+              mapsData: ev.maps_results || undefined,
+              isStreaming: false,
+              agentStatus: {
+                ...defaultAgentStatus(),
+                step: 2,
+                flightAgent: "done",
+                hotelAgent: "done",
+                weatherAgent: "done",
+                mapsAgent: "done",
+                itineraryAgent: "done",
+                currentAgent: "⏸ Awaiting your approval...",
+                elapsedMs: Date.now() - startTime,
+              },
+            });
+            setIsPlanning(false);
+          }
 
-            // node_complete
-            else if (ev.event === "node_complete") {
-              setTurns((prev) =>
-                prev.map((t) => {
-                  if (t.id !== assistantTurnId) return t;
-                  const s = t.agentStatus ?? defaultAgentStatus();
-                  const elapsed = Date.now() - startTime;
-
-                  if (ev.node === "supervisor") {
-                    return {
-                      ...t,
-                      intent: ev.intent || t.intent,
-                      agentStatus: {
-                        ...s,
-                        currentAgent:
-                          ev.intent === "follow_up"
-                            ? "🧠 Recalling your travel context..."
-                            : ev.intent === "specific_query"
-                            ? "🔎 Consulting specialist agent..."
-                            : "🚀 Deploying agent swarm...",
-                        elapsedMs: elapsed,
-                      },
-                    };
-                  }
-                  if (ev.node === "flight_agent") {
-                    return {
-                      ...t,
-                      flightData: ev.flight_results || t.flightData,
-                      agentStatus: { ...s, flightAgent: "done", elapsedMs: elapsed },
-                    };
-                  }
-                  if (ev.node === "hotel_agent") {
-                    return {
-                      ...t,
-                      hotelData: ev.hotel_results || t.hotelData,
-                      agentStatus: { ...s, hotelAgent: "done", elapsedMs: elapsed },
-                    };
-                  }
-                  if (ev.node === "weather_agent") {
-                    return {
-                      ...t,
-                      weatherData: ev.weather_results || t.weatherData,
-                      agentStatus: { ...s, weatherAgent: "done", elapsedMs: elapsed },
-                    };
-                  }
-                  if (ev.node === "maps_agent") {
-                    return {
-                      ...t,
-                      mapsData: ev.maps_results || t.mapsData,
-                      agentStatus: { ...s, mapsAgent: "done", elapsedMs: elapsed },
-                    };
-                  }
-                  if (ev.node === "itinerary_agent") {
-                    return {
-                      ...t,
-                      itineraryData: ev.itinerary || t.itineraryData,
-                      agentStatus: {
-                        ...s,
-                        step: 2,
-                        itineraryAgent: "done",
-                        finalAgent: "running",
-                        currentAgent: "Fan-In: Synthesizing final dossier...",
-                        elapsedMs: elapsed,
-                      },
-                    };
-                  }
-                  if (ev.node === "final_agent") {
-                    return {
-                      ...t,
-                      agentStatus: {
-                        ...s,
-                        step: 3,
-                        finalAgent: "done",
-                        outputGuardrail: "running",
-                        currentAgent: "🛡️ Output Guardrail: Auditing safety & format...",
-                        elapsedMs: elapsed,
-                      },
-                    };
-                  }
-                  if (ev.node === "output_guardrail") {
-                    return {
-                      ...t,
-                      agentStatus: {
-                        ...s,
-                        step: 4,
-                        outputGuardrail: "done",
-                        currentAgent: "Complete",
-                        elapsedMs: elapsed,
-                      },
-                    };
-                  }
-                  return t;
-                })
-              );
+          // complete
+          else if (ev.event === "complete") {
+            if (ev.thread_id) {
+              setSessionId(ev.thread_id);
             }
+            updateTurn(assistantTurnId, {
+              isStreaming: false,
+              planResult: ev.answer || undefined,
+              flightData: ev.flight_results || undefined,
+              hotelData: ev.hotel_results || undefined,
+              weatherData: ev.weather_results || undefined,
+              mapsData: ev.maps_results || undefined,
+              itineraryData: ev.itinerary || undefined,
+              llmCalls: ev.llm_calls,
+              agentStatus: {
+                step: 4,
+                flightAgent: "done",
+                hotelAgent: "done",
+                weatherAgent: "done",
+                mapsAgent: "done",
+                itineraryAgent: "done",
+                finalAgent: "done",
+                currentAgent: "Complete",
+                elapsedMs: Date.now() - startTime,
+              },
+            });
+          }
 
-            // token — word-by-word typewriter
-            else if (ev.event === "token" && ev.token) {
-              setTurns((prev) =>
-                prev.map((t) =>
-                  t.id === assistantTurnId
-                    ? { ...t, planResult: (t.planResult || "") + ev.token }
-                    : t
-                )
-              );
-            }
-
-            // approval_required — HITL pause
-            else if (ev.event === "approval_required") {
-              updateTurn(assistantTurnId, {
-                awaitingApproval: true,
-                approvalQuestion: ev.question || "Do you approve this itinerary?",
-                draftItinerary: ev.draft_itinerary,
-                flightData: ev.flight_results || undefined,
-                hotelData: ev.hotel_results || undefined,
-                weatherData: ev.weather_results || undefined,
-                mapsData: ev.maps_results || undefined,
-                isStreaming: false,
-                agentStatus: {
-                  ...defaultAgentStatus(),
-                  step: 2,
-                  flightAgent: "done",
-                  hotelAgent: "done",
-                  weatherAgent: "done",
-                  mapsAgent: "done",
-                  itineraryAgent: "done",
-                  currentAgent: "⏸ Awaiting your approval...",
-                  elapsedMs: Date.now() - startTime,
-                },
-              });
-              setIsPlanning(false);
-              return; // stop processing — stream is paused
-            }
-
-            // complete
-            else if (ev.event === "complete") {
-              updateTurn(assistantTurnId, {
-                isStreaming: false,
-                planResult: ev.answer || undefined,
-                flightData: ev.flight_results || undefined,
-                hotelData: ev.hotel_results || undefined,
-                weatherData: ev.weather_results || undefined,
-                mapsData: ev.maps_results || undefined,
-                itineraryData: ev.itinerary || undefined,
-                llmCalls: ev.llm_calls,
-                agentStatus: {
-                  step: 4,
-                  flightAgent: "done",
-                  hotelAgent: "done",
-                  weatherAgent: "done",
-                  mapsAgent: "done",
-                  itineraryAgent: "done",
-                  finalAgent: "done",
-                  currentAgent: "Complete",
-                  elapsedMs: Date.now() - startTime,
-                },
-              });
-            }
-
-            // error
-            else if (ev.event === "error") {
-              updateTurn(assistantTurnId, {
-                isStreaming: false,
-                planResult: `⚠ Agent error: ${ev.message}`,
-              });
-            }
-          } catch { /* ignore JSON parse errors */ }
-        }
-      }
-    } catch (err) {
+          // error
+          else if (ev.event === "error") {
+            updateTurn(assistantTurnId, {
+              isStreaming: false,
+              planResult: `⚠ Agent error: ${ev.message}`,
+            });
+          }
+        },
+        getToken
+      );
+    } catch (err: unknown) {
       console.error("Backend Connection Error:", err);
+      const msg = (err as Error)?.message || "Connection error. Please ensure the backend is running on http://127.0.0.1:8000";
       updateTurn(assistantTurnId, {
         isStreaming: false,
-        planResult: `Connection error. Please ensure the backend is running on http://127.0.0.1:8000`,
+        planResult: `⚠ ${msg}`,
       });
     } finally {
       setIsPlanning(false);
@@ -498,6 +500,11 @@ export default function HomePage() {
 
   // ── HITL Resume (Approve) ────────────────────────────────────────────────
   const handleApprove = async (turnId: string) => {
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
+
     const turn = turns.find((t) => t.id === turnId);
     if (!turn) return;
 
@@ -510,6 +517,11 @@ export default function HomePage() {
 
   // ── HITL Resume (Revise) ─────────────────────────────────────────────────
   const handleRevise = async (turnId: string, feedback: string) => {
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
+
     updateTurn(turnId, { isResuming: true, approvalResolved: "revised" });
     setIsPlanning(true);
     const startTime = Date.now();
@@ -522,61 +534,52 @@ export default function HomePage() {
     turnId: string,
     approved: boolean,
     feedback: string,
-    startTime: number
+    _startTime: number
   ) => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/plan/resume/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ thread_id: sessionId, approved, feedback }),
-      });
-
-      if (!res.ok || !res.body) throw new Error(`Resume failed: ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data: ")) continue;
-          try {
-            const ev = JSON.parse(trimmed.slice(6));
-
-            if (ev.event === "token" && ev.token) {
-              setTurns((prev) =>
-                prev.map((t) =>
-                  t.id === turnId
-                    ? { ...t, planResult: (t.planResult || "") + ev.token, isStreaming: true }
-                    : t
-                )
-              );
-            } else if (ev.event === "complete") {
-              updateTurn(turnId, {
-                isStreaming: false,
-                isResuming: false,
-                planResult: ev.answer || undefined,
-                flightData: ev.flight_results || undefined,
-                hotelData: ev.hotel_results || undefined,
-                weatherData: ev.weather_results || undefined,
-                mapsData: ev.maps_results || undefined,
-                itineraryData: ev.itinerary || undefined,
-                llmCalls: ev.llm_calls,
-              });
-            }
-          } catch { /* ignore */ }
-        }
-      }
-    } catch (err) {
+      await streamResumeTrip(
+        sessionId,
+        approved,
+        feedback,
+        (ev) => {
+          if (ev.event === "token" && ev.token) {
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === turnId
+                  ? { ...t, planResult: (t.planResult || "") + ev.token, isStreaming: true }
+                  : t
+              )
+            );
+          } else if (ev.event === "complete") {
+            updateTurn(turnId, {
+              isStreaming: false,
+              isResuming: false,
+              planResult: ev.answer || undefined,
+              flightData: ev.flight_results || undefined,
+              hotelData: ev.hotel_results || undefined,
+              weatherData: ev.weather_results || undefined,
+              mapsData: ev.maps_results || undefined,
+              itineraryData: ev.itinerary || undefined,
+              llmCalls: ev.llm_calls,
+            });
+          } else if (ev.event === "error") {
+            updateTurn(turnId, {
+              isStreaming: false,
+              isResuming: false,
+              planResult: `⚠ Resume error: ${ev.message}`,
+            });
+          }
+        },
+        getToken
+      );
+    } catch (err: unknown) {
       console.error("Resume Error:", err);
-      updateTurn(turnId, { isStreaming: false, isResuming: false });
+      const msg = (err as Error)?.message || "Failed to resume session.";
+      updateTurn(turnId, {
+        isStreaming: false,
+        isResuming: false,
+        planResult: `⚠ ${msg}`,
+      });
     } finally {
       setIsPlanning(false);
     }
@@ -609,13 +612,14 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-screen bg-[#000000] text-white w-full">
-      {/* Permanent Fixed Sidebar (w-64, no toggle needed) */}
+      {/* Permanent Fixed Sidebar */}
       <AppSidebar
         onNewTrip={resetToNewTrip}
         activeView={activeView}
         setActiveView={setActiveView}
         currentSessionId={sessionId}
         onLoadSession={handleLoadSession}
+        onOpenAuth={() => setAuthModalOpen(true)}
       />
 
       {/* Main Content Layout — permanently offset by pl-64 */}
@@ -642,16 +646,30 @@ export default function HomePage() {
                     Powered by LangGraph
                   </span>
                 </div>
-                <div className="flex items-center gap-4 text-xs">
-                  <a href="#architecture" className="text-white/50 hover:text-white transition-colors">Architecture</a>
-                  <a href="#features" className="text-white/50 hover:text-white transition-colors">Features</a>
-                  <button
-                    type="button"
-                    onClick={() => handlePlanTrip("5 Days in Tokyo & Kyoto")}
-                    className="px-3.5 py-1.5 rounded-lg bg-white/8 hover:bg-white/12 border border-white/15 text-white font-medium transition-all cursor-pointer"
-                  >
-                    Quick Demo
-                  </button>
+                <div className="flex items-center gap-3 text-xs">
+                  <a href="#architecture" className="text-white/50 hover:text-white transition-colors hidden sm:block">Architecture</a>
+                  <a href="#features" className="text-white/50 hover:text-white transition-colors hidden sm:block">Features</a>
+                  
+                  
+
+                  {!authLoading && !user ? (
+                    <button
+                      type="button"
+                      onClick={() => setAuthModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 font-medium transition-all cursor-pointer"
+                    >
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>Sign In</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handlePlanTrip("5 Days in Tokyo & Kyoto")}
+                      className="px-3.5 py-1.5 rounded-lg bg-white/8 hover:bg-white/12 border border-white/15 text-white font-medium transition-all cursor-pointer"
+                    >
+                      Quick Demo
+                    </button>
+                  )}
                 </div>
               </header>
             </ScrollReveal>
@@ -688,7 +706,7 @@ export default function HomePage() {
                     />
                   </ScrollReveal>
 
-                  <div className="grid grid-cols-1 :grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-6xl text-left">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-6xl text-left">
                     {sampleSuggestions.map((item, idx) => (
                       <ScrollReveal key={idx} direction="up" durationMs={750} delayMs={500 + idx * 100} className="h-full">
                         <div className="relative h-full rounded-2xl p-[1px] group">
@@ -749,10 +767,10 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={resetToNewTrip}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/8 hover:bg-white/12 border border-white/12 text-xs font-medium text-white transition-all cursor-pointer shrink-0"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-teal-600 to-sky-600 hover:from-teal-500 hover:to-sky-500 border border-teal-400/30 text-white font-bold text-xs transition-all cursor-pointer shadow-sm shadow-teal-900/40 shrink-0"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>New Journey</span>
+                <Plus className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+                <span className="text-white font-bold">Create Journey</span>
               </button>
             </header>
 
@@ -779,6 +797,12 @@ export default function HomePage() {
           </div>
         )}
       </div>
+
+      {/* Independent Application Authentication Modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+      />
     </div>
   );
 }

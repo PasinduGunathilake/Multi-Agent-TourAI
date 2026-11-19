@@ -1,11 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Plus,
   Clock,
   Trash2,
+  LogIn,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchUserThreads, deleteThreadSession } from "@/lib/api";
+import { DropdownMenuProfileDropdownWithStatus } from "@/components/dropdown-menu-profile-dropdown-with-status";
 
 export interface JourneySession {
   sessionId: string;
@@ -21,44 +25,61 @@ interface AppSidebarProps {
   setActiveView?: (view: "chat" | "explore" | "telemetry") => void;
   currentSessionId?: string;
   onLoadSession?: (sessionId: string) => void;
+  onOpenAuth?: () => void;
 }
 
 export default function AppSidebar({
   onNewTrip,
   currentSessionId,
   onLoadSession,
+  onOpenAuth,
 }: AppSidebarProps) {
   const [history, setHistory] = useState<JourneySession[]>([]);
+  const { user, logout, getToken } = useAuth();
 
-  // Load history from localStorage on mount and whenever currentSessionId changes
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("touraiJourneyHistory");
-      if (raw) setHistory(JSON.parse(raw));
-    } catch {
-      /* ignore */
+  // Load user's threads from backend when user changes or session updates
+  const loadThreads = useCallback(async () => {
+    if (!user) {
+      setHistory([]);
+      return;
     }
-  }, [currentSessionId]);
+    try {
+      const data = await fetchUserThreads(getToken);
+      const mapped: JourneySession[] = (data.threads || []).map((t) => ({
+        sessionId: t.thread_id,
+        title: t.title || "Untitled Journey",
+        timestamp: new Date(t.updated_at).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        turnCount: 1,
+      }));
+      setHistory(mapped);
+    } catch (err) {
+      console.warn("Could not load threads from backend:", err);
+    }
+  }, [user, getToken]);
+
+  useEffect(() => {
+    loadThreads();
+  }, [loadThreads, currentSessionId]);
 
   const deleteSession = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     const updated = history.filter((s) => s.sessionId !== sessionId);
     setHistory(updated);
-    try {
-      localStorage.setItem("touraiJourneyHistory", JSON.stringify(updated));
-      localStorage.removeItem(`tourai_session_${sessionId}`);
-    } catch {
-      /* ignore */
-    }
 
-    // Purge checkpoints from PostgreSQL backend
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-      await fetch(`${baseUrl}/api/session/${sessionId}`, {
-        method: "DELETE",
-      });
+      localStorage.removeItem(`tourai_session_${sessionId}`);
+    } catch {}
+
+    // Purge thread and checkpoints from PostgreSQL backend via authenticated API
+    try {
+      await deleteThreadSession(sessionId, getToken);
     } catch (err) {
       console.warn("Could not delete session from DB:", err);
+      // reload threads to restore consistency if deletion failed
+      loadThreads();
     }
   };
 
@@ -82,14 +103,14 @@ export default function AppSidebar({
           </div>
         </div>
 
-        {/* New Journey Action Button */}
+        {/* Create Journey Action Button */}
         <button
           type="button"
           onClick={onNewTrip}
-          className="w-full flex items-center justify-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-teal-500/15 to-sky-500/10 border border-teal-500/25 text-teal-300 hover:text-white hover:border-teal-400/40 hover:bg-teal-500/20 transition-all text-xs font-medium shadow-sm cursor-pointer"
+          className="w-full flex items-center justify-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-sky-600 hover:from-teal-500 hover:to-sky-500 border border-teal-400/30 text-white font-bold transition-all text-xs shadow-md shadow-teal-950/40 cursor-pointer"
         >
-          <Plus className="w-4 h-4 shrink-0 text-teal-400" />
-          <span>New Journey</span>
+          <Plus className="w-4 h-4 shrink-0 text-white stroke-[2.5]" />
+          <span className="text-white font-bold text-xs tracking-tight">Create Journey</span>
         </button>
       </div>
 
@@ -150,6 +171,21 @@ export default function AppSidebar({
         )}
       </div>
 
+      {/* ── 3. Bottom Section: User Account & Sign Out ── */}
+      <div className="pt-3 border-t border-white/[0.08] shrink-0">
+        {user ? (
+          <DropdownMenuProfileDropdownWithStatus showDetails={true} className="w-full" />
+        ) : (
+          <button
+            type="button"
+            onClick={onOpenAuth}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-white text-xs font-medium transition-all cursor-pointer"
+          >
+            <LogIn className="w-3.5 h-3.5 text-teal-400" />
+            <span>Sign In</span>
+          </button>
+        )}
+      </div>
     </aside>
   );
 }

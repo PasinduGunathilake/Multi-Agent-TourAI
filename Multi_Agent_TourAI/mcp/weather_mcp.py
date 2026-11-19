@@ -1,27 +1,63 @@
+import asyncio
 import os
 import re
+from typing import Optional, Dict, Any
+import certifi
 import requests
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from Multi_Agent_TourAI.utils import get_logger
 
+# SSL certificate setup for Windows
+os.environ["SSL_CERT_FILE"] = certifi.where()
+os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
-# Load Environment Variables
-# Load API keys from the project .env file
 load_dotenv()
-OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+logger = get_logger(__name__)
 
+DEFAULT_TIMEOUT = 15.0
 
-# FastMCP Server Initialization
-# FastMCP creates standard MCP tools that agents or external clients can invoke.
-mcp = FastMCP("Weather MCP Server")
-
-# Correct OpenWeatherMap API endpoints
+# OpenWeatherMap API Endpoints
 CURRENT_WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
 
 
+def redact_api_key(key: Optional[str]) -> str:
+    """Masks an API key for safe logging, displaying only first 4 and last 4 characters."""
+    if not key or not str(key).strip():
+        return "[NOT SET]"
+    key_str = str(key).strip()
+    if len(key_str) <= 8:
+        return "***"
+    return f"{key_str[:4]}...{key_str[-4:]}"
 
-# Tool 1: Get Current Real-Time Weather
+
+def get_openweather_api_key() -> str:
+    """Validates and returns the configured OpenWeatherMap API key."""
+    key = os.getenv("OPENWEATHER_API_KEY")
+    if not key or not key.strip():
+        raise ValueError(
+            "OPENWEATHER_API_KEY is missing or empty. Please set OPENWEATHER_API_KEY in your environment."
+        )
+    return key.strip()
+
+
+def sanitize_city_query(city: Any) -> str:
+    """Sanitizes city parameter, stripping prompt prefixes, quotes, and whitespace."""
+    if not city:
+        return ""
+    clean = re.sub(
+        r"^(destination|city|location|target)\s*:\s*",
+        "",
+        str(city),
+        flags=re.IGNORECASE,
+    ).strip(" .\n\"'")
+    return clean
+
+
+# FastMCP Server Initialization
+mcp = FastMCP("Weather MCP Server")
+
 
 @mcp.tool()
 def get_current_weather(city: str) -> dict:
@@ -34,48 +70,48 @@ def get_current_weather(city: str) -> dict:
     Returns:
         dict: Weather information including temperature, humidity, condition, and wind speed.
     """
-    if not OPENWEATHER_API_KEY:
+    api_key = os.getenv("OPENWEATHER_API_KEY")
+    if not api_key or not api_key.strip():
+        logger.warning("OpenWeatherMap API key is missing or not set.")
         return {"error": "OPENWEATHER_API_KEY is not set in your .env file."}
 
-    # Sanitize city parameter (strip prefixes like 'Destination:', quotes, extra whitespace)
-    city = re.sub(r'^(destination|city|location|target)\s*:\s*', '', str(city), flags=re.IGNORECASE).strip(" .\n\"'")
+    clean_city = sanitize_city_query(city)
+    if not clean_city:
+        return {"error": "No valid destination city provided."}
 
     try:
-        # Call OpenWeatherMap Current Weather API
         response = requests.get(
             url=CURRENT_WEATHER_URL,
             params={
-                "q": city,
-                "appid": OPENWEATHER_API_KEY,
-                "units": "metric",  # Request temperature in Celsius
+                "q": clean_city,
+                "appid": api_key.strip(),
+                "units": "metric",
             },
-            # Timeout (10 seconds): Stops the request after 10s so the agent workflow
-            # does not freeze/hang indefinitely if the API or network connection is slow.
             timeout=10,
         )
 
         data = response.json()
 
-        # If the API returns an error status (like 404 city not found)
         if response.status_code != 200:
-            return {"error": data.get("message", "Failed to fetch weather data.")}
+            msg = data.get("message", f"HTTP {response.status_code}")
+            return {"error": f"Failed to fetch weather data: {msg}"}
 
-        # Parse and return clean data
         return {
-            "city": data.get("name", city),
+            "city": data.get("name", clean_city),
             "temperature": f"{data['main']['temp']} °C",
             "feels_like": f"{data['main']['feels_like']} °C",
             "humidity": f"{data['main']['humidity']}%",
-            "condition": data["weather"][0]["description"].capitalize(),
-            "wind_speed": f"{data['wind']['speed']} m/s",
+            "condition": data["weather"][0]["description"].capitalize() if data.get("weather") else "Clear",
+            "wind_speed": f"{data['wind']['speed']} m/s" if data.get("wind") else "N/A",
         }
 
+    except requests.exceptions.Timeout:
+        logger.error(f"OpenWeatherMap current weather request timed out for city '{clean_city}'")
+        return {"error": "Weather request timed out."}
     except Exception as error:
+        logger.error(f"OpenWeatherMap request failed: {str(error)}")
         return {"error": str(error)}
 
-
-
-# Tool 2: Get 5-Day Weather Forecast
 
 @mcp.tool()
 def get_forecast(city: str) -> dict:
@@ -88,59 +124,74 @@ def get_forecast(city: str) -> dict:
     Returns:
         dict: Forecast list containing upcoming 3-hour intervals with temperature and condition.
     """
-    if not OPENWEATHER_API_KEY:
+    api_key = os.getenv("OPENWEATHER_API_KEY")
+    if not api_key or not api_key.strip():
+        logger.warning("OpenWeatherMap API key is missing or not set.")
         return {"error": "OPENWEATHER_API_KEY is not set in your .env file."}
 
-    # Sanitize city parameter (strip prefixes like 'Destination:', quotes, extra whitespace)
-    city = re.sub(r'^(destination|city|location|target)\s*:\s*', '', str(city), flags=re.IGNORECASE).strip(" .\n\"'")
+    clean_city = sanitize_city_query(city)
+    if not clean_city:
+        return {"error": "No valid destination city provided."}
 
     try:
-        # Call OpenWeatherMap 5-Day Forecast API
         response = requests.get(
             url=FORECAST_URL,
             params={
-                "q": city,
-                "appid": OPENWEATHER_API_KEY,
+                "q": clean_city,
+                "appid": api_key.strip(),
                 "units": "metric",
             },
-            # Timeout (10 seconds): Prevents the whole multi-agent pipeline from getting stuck
-            # if the forecast API endpoint takes too long to respond.
             timeout=10,
         )
 
         data = response.json()
 
         if response.status_code != 200:
-            return {"error": data.get("message", "Failed to fetch forecast data.")}
+            msg = data.get("message", f"HTTP {response.status_code}")
+            return {"error": f"Failed to fetch forecast data: {msg}"}
 
-        # Extract the next 5 intervals (each interval is 3 hours ahead)
         forecast_list = []
         for item in data.get("list", [])[:5]:
+            weather_desc = item["weather"][0]["description"].capitalize() if item.get("weather") else "Clear"
             forecast_list.append({
                 "datetime": item.get("dt_txt"),
                 "temp": f"{item['main']['temp']} °C",
-                "weather": item["weather"][0]["description"].capitalize(),
+                "weather": weather_desc,
             })
 
         return {
-            "city": data.get("city", {}).get("name", city),
+            "city": data.get("city", {}).get("name", clean_city),
             "forecast": forecast_list,
         }
 
+    except requests.exceptions.Timeout:
+        logger.error(f"OpenWeatherMap forecast request timed out for city '{clean_city}'")
+        return {"error": "Forecast request timed out."}
     except Exception as error:
+        logger.error(f"OpenWeatherMap forecast request failed: {str(error)}")
         return {"error": str(error)}
 
 
-
-# Helper Functions for Weather Agent
-# These async functions format the weather data into readable strings for the LLM.
+# Non-blocking async helpers for agent execution
 
 async def weather_mcp_search(city: str) -> str:
     """
     Asynchronously get current weather and return a clean text summary.
-    Used by weather_agent in the LangGraph workflow.
+    Executes in a thread pool to avoid blocking the event loop.
     """
-    res = get_current_weather(city)
+    if not city or not str(city).strip():
+        return "No destination city provided."
+
+    try:
+        res = await asyncio.wait_for(
+            asyncio.to_thread(get_current_weather, city),
+            timeout=DEFAULT_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        return "Current weather unavailable: Request timed out."
+    except Exception as e:
+        return f"Current weather unavailable: {str(e)}"
+
     if "error" in res:
         return f"Current weather unavailable: {res['error']}"
 
@@ -153,9 +204,21 @@ async def weather_mcp_search(city: str) -> str:
 async def forecast_mcp_search(city: str) -> str:
     """
     Asynchronously get forecast and return a bullet-point text summary.
-    Used by weather_agent in the LangGraph workflow.
+    Executes in a thread pool to avoid blocking the event loop.
     """
-    res = get_forecast(city)
+    if not city or not str(city).strip():
+        return "No destination city provided."
+
+    try:
+        res = await asyncio.wait_for(
+            asyncio.to_thread(get_forecast, city),
+            timeout=DEFAULT_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        return "Forecast unavailable: Request timed out."
+    except Exception as e:
+        return f"Forecast unavailable: {str(e)}"
+
     if "error" in res:
         return f"Forecast unavailable: {res['error']}"
 
@@ -165,15 +228,16 @@ async def forecast_mcp_search(city: str) -> str:
     return "\n".join(summary)
 
 
-# Explicitly export functions and mcp server
 __all__ = [
     "mcp",
     "get_current_weather",
     "get_forecast",
     "weather_mcp_search",
     "forecast_mcp_search",
+    "get_openweather_api_key",
+    "redact_api_key",
+    "sanitize_city_query",
 ]
 
-# Run FastMCP server if executed directly
 if __name__ == "__main__":
     mcp.run()

@@ -172,7 +172,7 @@ def resolve_location_to_iata(location: Optional[str]) -> Optional[str]:
     Colombo (Bandaranaike) -> CMB
     Sri Lanka -> CMB
     """
-    if not location:
+    if not location or not isinstance(location, str):
         return None
 
     raw_location = location.strip()
@@ -207,19 +207,24 @@ def resolve_location_to_iata(location: Optional[str]) -> Optional[str]:
         name = str(airport.get("name", "")).lower().strip()
 
         score = 0
+        matched = False
 
         if city == location_clean:
             score += 100
+            matched = True
         elif location_clean in city:
             score += 70
+            matched = True
 
         if location_clean in name:
             score += 40
+            matched = True
 
-        if "international" in name:
+        # Only award international bonus if a valid location match was established
+        if matched and "international" in name:
             score += 10
 
-        if score > 0:
+        if matched and score > 0:
             city_matches.append((score, iata))
 
     if city_matches:

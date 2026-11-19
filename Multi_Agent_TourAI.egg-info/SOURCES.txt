@@ -29,6 +29,7 @@ Multi_Agent_TourAI/auth/thread_repo.py
 Multi_Agent_TourAI/config/__init__.py
 Multi_Agent_TourAI/config/prompts.py
 Multi_Agent_TourAI/database/__init__.py
+Multi_Agent_TourAI/database/connection.py
 Multi_Agent_TourAI/database/migrate.py
 Multi_Agent_TourAI/graph/__init__.py
 Multi_Agent_TourAI/graph/state.py
@@ -53,8 +54,15 @@ Multi_Agent_TourAI/utils/__init__.py
 Multi_Agent_TourAI/utils/flight_utils.py
 Multi_Agent_TourAI/utils/logger.py
 tests/__init__.py
+tests/test_auth_concurrency.py
+tests/test_auth_phase2.py
+tests/test_auth_phase2c.py
+tests/test_database_architecture.py
 tests/test_flight_tool.py
 tests/test_flight_utils.py
+tests/test_mcp_integrations.py
+tests/test_phase1_fixes.py
+tests/test_security_phase1.py
 tests/test_tavily_tool.py
 tests/integration/__init__.py
 tests/integration/test_flight_tool.py

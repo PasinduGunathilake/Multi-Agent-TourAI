@@ -60,7 +60,17 @@ def create_user_thread(
             )
             row = cur.fetchone()
             logger.info(f"[THREAD] Created/updated thread {assigned_thread_id} for user {user_id}")
-            return str(row[0] if row else assigned_thread_id)
+            if row is not None:
+                if isinstance(row, dict):
+                    return str(row.get("thread_id", assigned_thread_id))
+                try:
+                    return str(row["thread_id"])
+                except (KeyError, TypeError):
+                    try:
+                        return str(row[0])
+                    except (IndexError, KeyError, TypeError):
+                        pass
+            return str(assigned_thread_id)
 
 
 def verify_thread_ownership(user_id: uuid.UUID, thread_id: str) -> bool:

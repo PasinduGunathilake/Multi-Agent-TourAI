@@ -14,6 +14,9 @@ class TravelState(TypedDict):
     # User's raw question or request
     user_query: str
     
+    # Destination city extracted during supervisor analysis
+    destination: str
+    
     # Output from flight_agent (Aviationstack MCP)
     flight_results: str
     
@@ -63,13 +66,7 @@ class TravelState(TypedDict):
     final_response: str
 
     # Output Guardrail Audit States
-    # Reason if flagged or blocked
     output_guardrail_passed: bool
-    # Output Guardrail Audit States
-    output_guardrail_passed: bool
-    output_guardrail_reason: str
-
-    # Reason if flagged or blocked
     output_guardrail_reason: str
 
 

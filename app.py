@@ -598,6 +598,7 @@ async def plan_stream(
         initial_state = {
             "messages": [HumanMessage(content=user_query)],
             "user_query": user_query,
+            "destination": "",
             "flight_results": "",
             "hotel_results": "",
             "weather_results": "",

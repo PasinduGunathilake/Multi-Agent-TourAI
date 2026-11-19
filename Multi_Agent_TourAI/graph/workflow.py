@@ -313,6 +313,7 @@ def _serialize_workflow_result(result: dict, thread_id: str, user_id: str) -> di
         "answer": answer,
         "requires_approval": requires_approval,
         "approval_request": approval_question,
+        "destination": result.get("destination", ""),
         "flight_results": result.get("flight_results", ""),
         "hotel_results": result.get("hotel_results", ""),
         "weather_results": result.get("weather_results", ""),
@@ -361,7 +362,15 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
         "configurable": {
             "thread_id": thread_id,    # Checkpointer - current session (short term)
             "user_id": clean_user_id,  # Store - permanent user profile (long term)
-        }
+        },
+        "run_name": f"TourAI Plan: {user_input[:35]}",
+        "tags": ["tourai-workflow", "langgraph", "phase3"],
+        "metadata": {
+            "thread_id": thread_id,
+            "user_id": clean_user_id,
+            "query_length": len(user_input),
+            "workflow_version": "phase3",
+        },
     }
 
     # Check if this thread has prior state in the Postgres checkpointer
@@ -377,6 +386,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
         initial_input = {
             "messages": [HumanMessage(content=user_input)],
             "user_query": user_input,
+            "destination": "",
             "flight_results": "",
             "hotel_results": "",
             "weather_results": "",
@@ -441,7 +451,16 @@ def resume_travel_agent(
         "configurable": {
             "thread_id": thread_id,
             "user_id": clean_user_id,
-        }
+        },
+        "run_name": f"TourAI Resume: {thread_id[:12]}",
+        "tags": ["tourai-workflow", "langgraph", "phase3", "hitl-resume"],
+        "metadata": {
+            "thread_id": thread_id,
+            "user_id": clean_user_id,
+            "approved": approved,
+            "feedback_length": len(clean_feedback),
+            "workflow_version": "phase3",
+        },
     }
 
     # Resume graph execution using Command(resume=...)

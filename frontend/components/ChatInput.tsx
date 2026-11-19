@@ -29,8 +29,9 @@ export default function ChatInput({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    onSend(input.trim(), selectedMode);
+    if (isLoading) return;
+    const query = input.trim() || "5 Days in Tokyo & Kyoto";
+    onSend(query, selectedMode);
     setInput("");
   };
 
@@ -86,21 +87,28 @@ export default function ChatInput({
             className="flex-1 bg-transparent border-none text-sm text-white placeholder-white/35 outline-none font-normal"
           />
 
-          {/* Submit / Send Button */}
+          {/* Submit / Create Button */}
           <button
             type="submit"
-            disabled={isLoading || !input.trim()}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 ${
+            disabled={isLoading}
+            className={`h-9 px-4.5 rounded-full flex items-center justify-center gap-1.5 text-xs font-bold transition-all duration-200 shrink-0 ${
               input.trim()
-                ? "bg-gradient-to-r from-teal-400 to-sky-400 text-black shadow-lg shadow-teal-500/35 hover:shadow-teal-400/50 hover:scale-105 active:scale-95 cursor-pointer"
-                : "bg-white/15 border border-white/25 text-white/90 hover:bg-white/20 cursor-not-allowed shadow-sm"
+                ? "bg-gradient-to-r from-teal-500 via-sky-600 to-indigo-600 text-white shadow-lg shadow-teal-500/30 hover:scale-105 active:scale-95 cursor-pointer border border-teal-400/30"
+                : "bg-gradient-to-r from-teal-600 to-sky-600 hover:from-teal-500 hover:to-sky-500 text-white active:scale-95 shadow-md shadow-teal-900/40 border border-teal-400/30 cursor-pointer"
             }`}
-            title="Submit to Agent Swarm"
+            title="Create Trip"
           >
             {isLoading ? (
-              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span className="text-white font-bold">Creating...</span>
+              </>
             ) : (
-              <ArrowUp className="w-4.5 h-4.5 stroke-[2.5]" />
+              <>
+                <span className="text-white font-bold text-xs tracking-tight">
+                  {isDockedBottom ? "Send" : "Create Trip"}
+                </span>
+              </>
             )}
           </button>
         </form>

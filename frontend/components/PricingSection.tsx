@@ -43,7 +43,7 @@ export default function PricingSection() {
         "Agent telemetry dashboard",
       ],
       cta: "Start 14-Day Free Trial",
-      ctaClass: "bg-gradient-to-r from-teal-400 to-sky-400 hover:opacity-90 text-black font-bold shadow-lg shadow-sky-500/25",
+      ctaClass: "bg-gradient-to-r from-teal-600 to-sky-600 hover:from-teal-500 hover:to-sky-500 border border-teal-400/30 text-white font-bold shadow-lg shadow-sky-900/30",
       cardClass: "bg-gradient-to-b from-[#0f1d30] to-[#0a1220] border-2 border-sky-400/50 shadow-2xl shadow-sky-500/15",
       checkColor: "text-sky-400",
     },
@@ -130,7 +130,7 @@ export default function PricingSection() {
                   {/* Popular Badge */}
                   {plan.badge && (
                     <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-20">
-                      <span className="px-3.5 py-1 rounded-full bg-gradient-to-r from-teal-400 to-sky-400 text-black text-[10px] font-bold tracking-widest uppercase whitespace-nowrap shadow-md shadow-sky-500/30">
+                      <span className="px-3.5 py-1 rounded-full bg-gradient-to-r from-teal-600 to-sky-600 text-white text-[10px] font-bold tracking-widest uppercase whitespace-nowrap shadow-md shadow-sky-900/40 border border-teal-400/30">
                         {plan.badge}
                       </span>
                     </div>

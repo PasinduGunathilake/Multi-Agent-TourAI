@@ -61,6 +61,7 @@ list_of_dirnfiles = [
     f"{project_name}/memory/store.py", # long-term persistance memory
     f"{project_name}/database/__init__.py",
     f"{project_name}/database/migrate.py",
+    f"{project_name}/database/connection.py",
     "migrations/001_create_user_threads.sql",
     "migrations/002_create_application_auth.sql",
 

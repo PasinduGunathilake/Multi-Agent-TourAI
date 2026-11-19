@@ -100,9 +100,9 @@ export default function HeroSearch({ onSearch, isLoading }: HeroSearchProps) {
             <button
               type="submit"
               disabled={isLoading || !query.trim()}
-              className="w-full sm:w-auto px-6 py-3 rounded-xl text-black text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-200 shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-200 shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                background: "linear-gradient(135deg, #2dd4bf, #38bdf8)",
+                background: "linear-gradient(135deg, #0d9488, #0284c7)",
                 boxShadow: "0 4px 24px rgba(56,189,248,0.25)",
               }}
             >

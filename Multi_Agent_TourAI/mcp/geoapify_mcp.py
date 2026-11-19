@@ -42,12 +42,19 @@ def get_geoapify_api_key() -> str:
 _mcp_client: Optional[MultiServerMCPClient] = None
 _geoapify_tools: Dict[str, Any] = {}
 _init_lock: Optional[asyncio.Lock] = None
+_init_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
 def _get_init_lock() -> asyncio.Lock:
-    """Returns or creates an asyncio.Lock tied to the active event loop."""
-    global _init_lock
-    if _init_lock is None:
+    """Returns or creates an asyncio.Lock tied to the active running event loop."""
+    global _init_lock, _init_loop
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if _init_lock is None or _init_loop is not current_loop:
+        _init_loop = current_loop
         _init_lock = asyncio.Lock()
     return _init_lock
 
@@ -75,10 +82,11 @@ def get_mcp_client() -> MultiServerMCPClient:
 
 def reset_geoapify_cache():
     """Resets internal client and tool caches (useful for testing and reconfiguration)."""
-    global _mcp_client, _geoapify_tools, _init_lock
+    global _mcp_client, _geoapify_tools, _init_lock, _init_loop
     _mcp_client = None
     _geoapify_tools = {}
     _init_lock = None
+    _init_loop = None
 
 
 # Module-level client reference for backward compatibility
@@ -111,32 +119,35 @@ async def init_geoapify_tools() -> Dict[str, Any]:
 
 
 def _parse_mcp_response(res: Any) -> Union[dict, list, str]:
-    """Helper to parse JSON string or data from MCP content blocks."""
+    """Helper to parse JSON string or data from single or multi-part MCP content blocks."""
     if res is None:
         return {}
     if isinstance(res, list) and len(res) > 0:
-        first = res[0]
-        if isinstance(first, dict) and "text" in first:
-            text_content = first["text"]
-            try:
-                return json.loads(text_content)
-            except Exception:
-                return text_content
-        if hasattr(first, "text"):
-            text_content = getattr(first, "text")
-            try:
-                return json.loads(text_content)
-            except Exception:
-                return text_content
-        if hasattr(first, "content"):
-            content = getattr(first, "content")
-            if isinstance(content, str):
+        extracted = []
+        for block in res:
+            if isinstance(block, dict) and "text" in block:
+                extracted.append(block["text"])
+            elif hasattr(block, "text"):
+                extracted.append(getattr(block, "text"))
+            elif hasattr(block, "content"):
+                c = getattr(block, "content")
+                extracted.append(str(c))
+            elif isinstance(block, str):
+                extracted.append(block)
+            else:
+                extracted.append(str(block))
+
+        combined = "\n".join(extracted) if extracted else str(res)
+        try:
+            return json.loads(combined)
+        except Exception:
+            # Check if first block alone is valid JSON
+            if extracted:
                 try:
-                    return json.loads(content)
+                    return json.loads(extracted[0])
                 except Exception:
-                    return content
-            return content
-        return res
+                    pass
+            return combined
     elif isinstance(res, str):
         try:
             return json.loads(res)

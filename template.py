@@ -15,13 +15,17 @@ list_of_dirnfiles = [
     f"{project_name}/guardrails/inputguardrail.py",
     f"{project_name}/guardrails/outputguardrail.py",
 
-    # auth & security module (Supabase JWT, Multi-User Isolation & Rate Limiting)
+    # auth & security module (JWT, Multi-User Isolation & Rate Limiting)
     f"{project_name}/auth/__init__.py",
     f"{project_name}/auth/models.py",
-    f"{project_name}/auth/jwt_validator.py",
+    f"{project_name}/auth/password_service.py",
+    f"{project_name}/auth/jwt_service.py",
+    f"{project_name}/auth/session_service.py",
+    f"{project_name}/auth/google_oauth.py",
+    f"{project_name}/auth/auth_repository.py",
+    f"{project_name}/auth/dependencies.py",
     f"{project_name}/auth/thread_repo.py",
     f"{project_name}/auth/rate_limiter.py",
-    f"{project_name}/auth/dependencies.py",
     
     # agents module
     f"{project_name}/agents/__init__.py",
@@ -55,8 +59,12 @@ list_of_dirnfiles = [
     f"{project_name}/memory/__init__.py",
     f"{project_name}/memory/checkpointer.py", # short-term persistance memory
     f"{project_name}/memory/store.py", # long-term persistance memory
+    f"{project_name}/database/__init__.py",
+    f"{project_name}/database/migrate.py",
     "migrations/001_create_user_threads.sql",
+    "migrations/002_create_application_auth.sql",
 
+    
     # config & prompts module
     f"{project_name}/config/__init__.py",
     f"{project_name}/config/config.yaml",

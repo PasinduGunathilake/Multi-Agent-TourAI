@@ -18,13 +18,16 @@ os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
 # Long-Term Memory (Cross-Session User Store)
 @log_execution
-def get_store() -> PostgresStore:
+def get_store(run_setup: bool = False) -> PostgresStore:
     """
-    Initializes and sets up PostgresStore for LangGraph Long-Term Memory.
+    Initializes PostgresStore for LangGraph Long-Term Memory.
     
     Provides:
       - Permanent storage for user preferences and custom travel profiles.
       - Cross-thread retrieval using namespaces like ("users", user_id).
+
+    When run_setup=True (used strictly by migrations/admin scripts), runs store.setup().
+    In normal runtime, operates with DML permissions only without attempting DDL schema alterations.
     """
     database_url = get_databaseUrl()
     parsed = urlparse(database_url)
@@ -35,8 +38,17 @@ def get_store() -> PostgresStore:
         row_factory=dict_row
     )
     store = PostgresStore(conn)
-    store.setup()  # Auto-creates 'store' table in PostgreSQL
-    logger.info("Long-Term Store connected and schema setup verified.")
+    if run_setup:
+        store.setup()
+        logger.info("Long-Term Store DDL setup verified via admin context.")
+    else:
+        # Runtime verification: check read-only that migration table exists
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM store_migrations LIMIT 1;")
+            if cur.fetchone() is None:
+                raise RuntimeError("PostgreSQL store schema is uninitialized. Run migrations first.")
+        logger.info("Long-Term Store runtime connected & schema confirmed ready.")
+
     return store
 __all__ = ["get_store"]
 

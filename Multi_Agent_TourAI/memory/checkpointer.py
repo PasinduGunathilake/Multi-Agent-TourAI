@@ -33,14 +33,17 @@ def get_databaseUrl() -> str:
 
 # Persistent Short-Term Memory & State Caching (Session Checkpointer)
 @log_execution
-def get_checkpointer() -> PostgresSaver:
+def get_checkpointer(run_setup: bool = False) -> PostgresSaver:
     """
-    Initializes and sets up the PostgresSaver checkpointer for LangGraph.
+    Initializes the PostgresSaver checkpointer for LangGraph.
     
     Provides:
       - Persistent thread-level short-term memory.
       - Step-by-step intermediate state caching across multi-agent nodes.
       - Error recovery and workflow resumption without duplicate API calls.
+
+    When run_setup=True (used strictly by migrations/admin scripts), runs checkpointer.setup().
+    In normal runtime, operates with DML permissions only without attempting DDL schema alterations.
     """
     database_url = get_databaseUrl()
 
@@ -54,8 +57,16 @@ def get_checkpointer() -> PostgresSaver:
     )
 
     checkpointer = PostgresSaver(conn)
-    checkpointer.setup()
-    logger.info("PostgreSQL Checkpointer connected & schema setup verified.")
+    if run_setup:
+        checkpointer.setup()
+        logger.info("PostgreSQL Checkpointer DDL setup verified via admin context.")
+    else:
+        # Runtime verification: check read-only that migration table exists
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM checkpoint_migrations LIMIT 1;")
+            if cur.fetchone() is None:
+                raise RuntimeError("PostgreSQL checkpointer schema is uninitialized. Run migrations first.")
+        logger.info("PostgreSQL Checkpointer runtime connected & schema confirmed ready.")
 
     return checkpointer
 

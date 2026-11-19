@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { PanelLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { GlowingEffect } from "./glowing-effect";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface SidebarContextValue {
@@ -318,7 +319,7 @@ export function SidebarMenuButton({
       type="button"
       data-active={isActive}
       className={cn(
-        "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer relative",
+        "group w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer relative overflow-hidden",
         isActive
           ? "bg-teal-500/15 border border-teal-500/30 text-teal-300 shadow-sm shadow-teal-500/10"
           : "text-white/50 hover:text-white hover:bg-white/[0.06] border border-transparent",
@@ -327,7 +328,17 @@ export function SidebarMenuButton({
       )}
       {...props}
     >
-      {children}
+      <GlowingEffect
+        spread={30}
+        glow={isActive}
+        disabled={false}
+        proximity={48}
+        inactiveZone={0.01}
+        borderWidth={1.5}
+      />
+      <span className="relative z-10 flex items-center gap-3 w-full">
+        {children}
+      </span>
       {!open && tooltip && (
         <span className="absolute left-16 px-2.5 py-1 rounded-md bg-black/90 border border-white/10 text-[11px] text-white whitespace-nowrap opacity-0 pointer-events-none group-hover/menu-item:opacity-100 transition-opacity z-50 shadow-xl">
           {tooltip}
@@ -394,13 +405,23 @@ export function SidebarTrigger({
       type="button"
       onClick={toggleSidebar}
       className={cn(
-        "p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/10 border border-white/10 transition-all cursor-pointer",
+        "group relative overflow-hidden p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/10 border border-white/10 transition-all cursor-pointer",
         className
       )}
       title="Toggle Sidebar (Ctrl+B)"
       {...props}
     >
-      <PanelLeft className="w-4 h-4" />
+      <GlowingEffect
+        spread={25}
+        glow={true}
+        disabled={false}
+        proximity={48}
+        inactiveZone={0.01}
+        borderWidth={1.5}
+      />
+      <span className="relative z-10 flex items-center justify-center">
+        <PanelLeft className="w-4 h-4" />
+      </span>
       <span className="sr-only">Toggle Sidebar</span>
     </button>
   );

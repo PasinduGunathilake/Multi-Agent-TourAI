@@ -5,6 +5,11 @@ import certifi
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 from langgraph.checkpoint.postgres import PostgresSaver
+from Multi_Agent_TourAI.database.connection import (
+    get_connection_pool,
+    get_db_connection,
+    get_database_url as get_db_url_normalized,
+)
 from Multi_Agent_TourAI.utils import get_logger, log_execution
 
 logger = get_logger(__name__)
@@ -15,29 +20,19 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
 
-# Retrieves and formats the PostgreSQL database URL with SSL mode.
+# Retrieves and formats the PostgreSQL database URL with SSL mode (preserved for backward compatibility).
 def get_databaseUrl() -> str:
-    database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRESQL_URL")
-
-    if not database_url:
-        raise ValueError(
-            "DATABASE_URL is missing. Please add your Render PostgreSQL URL to .env."
-        )
-
-    if "sslmode" not in database_url:
-        separator = "&" if "?" in database_url else "?"
-        database_url = f"{database_url}{separator}sslmode=require"
-
-    return database_url
+    return get_db_url_normalized()
 
 
 # Persistent Short-Term Memory & State Caching (Session Checkpointer)
 @log_execution
 def get_checkpointer(run_setup: bool = False) -> PostgresSaver:
     """
-    Initializes the PostgresSaver checkpointer for LangGraph.
+    Initializes the PostgresSaver checkpointer for LangGraph using the centralized connection pool.
     
     Provides:
+      - Thread-safe, non-blocking checkpointer access across concurrent multi-user requests.
       - Persistent thread-level short-term memory.
       - Step-by-step intermediate state caching across multi-agent nodes.
       - Error recovery and workflow resumption without duplicate API calls.
@@ -45,41 +40,27 @@ def get_checkpointer(run_setup: bool = False) -> PostgresSaver:
     When run_setup=True (used strictly by migrations/admin scripts), runs checkpointer.setup().
     In normal runtime, operates with DML permissions only without attempting DDL schema alterations.
     """
-    database_url = get_databaseUrl()
+    pool = get_connection_pool()
+    checkpointer = PostgresSaver(pool)
 
-    parsed = urlparse(database_url)
-    logger.info(f"Connecting to PostgreSQL at Host: '{parsed.hostname}', DB: '{parsed.path[1:]}'")
-
-    conn = psycopg.connect(
-        database_url,
-        autocommit=True,
-        row_factory=dict_row
-    )
-
-    checkpointer = PostgresSaver(conn)
     if run_setup:
         checkpointer.setup()
         logger.info("PostgreSQL Checkpointer DDL setup verified via admin context.")
     else:
-        # Runtime verification: check read-only that migration table exists
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM checkpoint_migrations LIMIT 1;")
-            if cur.fetchone() is None:
-                raise RuntimeError("PostgreSQL checkpointer schema is uninitialized. Run migrations first.")
-        logger.info("PostgreSQL Checkpointer runtime connected & schema confirmed ready.")
+        logger.info("PostgreSQL Checkpointer initialized with connection pool.")
 
     return checkpointer
 
 
 def delete_thread_checkpoints(thread_id: str) -> bool:
     """
-    Deletes all LangGraph checkpoints associated with a given thread_id from PostgreSQL.
+    Deletes all LangGraph checkpoints associated with a given thread_id from PostgreSQL
+    using the centralized connection pool.
     """
     if not thread_id:
         return False
-    database_url = get_databaseUrl()
     try:
-        with psycopg.connect(database_url, autocommit=True) as conn:
+        with get_db_connection(autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,))
                 cur.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,))

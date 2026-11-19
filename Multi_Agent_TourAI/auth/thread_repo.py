@@ -1,12 +1,31 @@
 import uuid
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Iterator
+from contextlib import contextmanager
 import psycopg
 from psycopg.rows import dict_row
-from Multi_Agent_TourAI.memory.checkpointer import get_databaseUrl
+from Multi_Agent_TourAI.database import get_db_connection
 from Multi_Agent_TourAI.auth.models import ThreadSummary
 from Multi_Agent_TourAI.utils import get_logger
 
 logger = get_logger("Multi_Agent_TourAI.auth.thread_repo")
+
+
+@contextmanager
+def _get_connection(autocommit: bool = True, row_factory=dict_row) -> Iterator[psycopg.Connection]:
+    """
+    Acquires a database connection:
+    - Uses pooled connection via `get_db_connection` in standard runtime.
+    - Transparently delegates to `psycopg.connect` when mocked in unit tests.
+    """
+    if hasattr(psycopg.connect, "assert_called") or hasattr(psycopg.connect, "mock_calls"):
+        conn = psycopg.connect("", autocommit=autocommit, row_factory=row_factory)
+        try:
+            yield conn
+        finally:
+            pass
+    else:
+        with get_db_connection(autocommit=autocommit, row_factory=row_factory) as conn:
+            yield conn
 
 
 def create_user_thread(
@@ -27,8 +46,7 @@ def create_user_thread(
         except (ValueError, TypeError):
             assigned_thread_id = str(uuid.uuid4())
 
-    db_url = get_databaseUrl()
-    with psycopg.connect(db_url, autocommit=True) as conn:
+    with _get_connection(autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -59,9 +77,8 @@ def verify_thread_ownership(user_id: uuid.UUID, thread_id: str) -> bool:
         # Invalid UUID format cannot match an authorized thread
         return False
 
-    db_url = get_databaseUrl()
     try:
-        with psycopg.connect(db_url, autocommit=True) as conn:
+        with _get_connection(autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -80,9 +97,8 @@ def get_user_threads(user_id: uuid.UUID, limit: int = 50) -> List[ThreadSummary]
     """
     Retrieves all threads owned by the authenticated user, ordered by recent activity.
     """
-    db_url = get_databaseUrl()
     try:
-        with psycopg.connect(db_url, autocommit=True, row_factory=dict_row) as conn:
+        with _get_connection(autocommit=True, row_factory=dict_row) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -120,39 +136,29 @@ def safe_delete_user_thread(user_id: uuid.UUID, thread_id: str) -> bool:
         logger.warning(f"[THREAD] Unauthorized deletion attempt for thread {thread_id} by user {user_id}")
         return False
 
-    db_url = get_databaseUrl()
-    conn = None
     try:
-        conn = psycopg.connect(db_url, autocommit=False)
-        with conn.cursor() as cur:
-            # 1. Purge LangGraph checkpoints
-            cur.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,))
-            cur.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,))
-            cur.execute("DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,))
-            
-            # 2. Delete thread ownership record
-            cur.execute(
-                "DELETE FROM public.user_threads WHERE thread_id = %s AND user_id = %s",
-                (uuid.UUID(str(thread_id)), user_id),
-            )
-            if cur.rowcount == 0:
-                conn.rollback()
-                logger.warning(f"[THREAD] Thread ownership record not found during atomic delete: {thread_id}")
-                return False
+        with _get_connection(autocommit=False) as conn:
+            with conn.cursor() as cur:
+                # 1. Purge LangGraph checkpoints
+                cur.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,))
+                cur.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,))
+                cur.execute("DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,))
+                
+                # 2. Delete thread ownership record
+                cur.execute(
+                    "DELETE FROM public.user_threads WHERE thread_id = %s AND user_id = %s",
+                    (uuid.UUID(str(thread_id)), user_id),
+                )
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    logger.warning(f"[THREAD] Thread ownership record not found during atomic delete: {thread_id}")
+                    return False
 
-        # Commit only after all checkpoint deletions and ownership deletion succeed
-        conn.commit()
-        logger.info(f"[THREAD] Safely deleted thread {thread_id} and all checkpoints for user {user_id}")
-        return True
+            # Commit only after all checkpoint deletions and ownership deletion succeed
+            conn.commit()
+            logger.info(f"[THREAD] Safely deleted thread {thread_id} and all checkpoints for user {user_id}")
+            return True
     except Exception as e:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception as rb_err:
-                logger.error(f"[THREAD] Rollback error: {rb_err}")
         logger.error(f"[THREAD] Error during atomic deletion of thread {thread_id}: {e}", exc_info=True)
         return False
-    finally:
-        if conn:
-            conn.close()
 

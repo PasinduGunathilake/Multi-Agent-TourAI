@@ -8,3 +8,10 @@ logs/
 
 
 additional_code/
+
+# Database backups and security artifacts
+backups/
+*.dump
+*.sql.bak
+*.bak
+*.backup

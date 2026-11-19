@@ -6,6 +6,7 @@ import asyncio
 import uvicorn
 import urllib.parse
 from typing import Any
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import nest_asyncio
 from fastapi.responses import StreamingResponse, RedirectResponse
@@ -56,17 +57,54 @@ from Multi_Agent_TourAI.auth.auth_repository import (
     complete_password_setup_with_token,
 )
 from Multi_Agent_TourAI.utils import get_logger
+from Multi_Agent_TourAI.database import (
+    get_connection_pool,
+    close_connection_pool,
+    check_database_health,
+)
 
 logger = get_logger("Multi_Agent_TourAI.api")
 
-nest_asyncio.apply() # Apply nested event loops for async calls within FastAPI runtime
+if os.getenv("ENABLE_NEST_ASYNCIO", "false").lower() in ("true", "1"):
+    try:
+        nest_asyncio.apply()
+    except Exception as e:
+        logger.warning(f"Failed to apply nest_asyncio: {e}")
+
 load_dotenv()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI lifespan context manager:
+    - Pre-warms and verifies the PostgreSQL connection pool on startup.
+    - Gracefully drains and closes all database pool connections on shutdown.
+    """
+    logger.info("[LIFESPAN] Starting up Multi_Agent_TourAI backend. Initializing DB connection pool...")
+    try:
+        get_connection_pool()
+        health = check_database_health()
+        logger.info(f"[LIFESPAN] Database connection pool healthy: {health}")
+    except Exception as e:
+        logger.error(f"[LIFESPAN] Warning: Database pool initialization check encountered an issue: {e}")
+    
+    yield
+
+    logger.info("[LIFESPAN] Shutting down Multi_Agent_TourAI backend. Draining database connection pool...")
+    try:
+        close_connection_pool()
+        logger.info("[LIFESPAN] Database connection pool closed successfully.")
+    except Exception as e:
+        logger.warning(f"[LIFESPAN] Error during database connection pool shutdown: {e}")
+
 
 # fastapi app
 app = FastAPI(
     title = "Multi_Agent_TourAI API",
     description= "Backend API for LangGraph Travel Planner with Human-in-the-Loop",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 # CORS Middleware - Enforce explicit allowed origins without wildcards
@@ -165,7 +203,13 @@ async def _stream_token_chunks(text: str):
 # API endpoints
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "services": "Multi_Agent_TourAI"}
+    db_health = check_database_health()
+    is_healthy = db_health.get("status") == "healthy"
+    return {
+        "status": "healthy" if is_healthy else "degraded",
+        "services": "Multi_Agent_TourAI",
+        "database": db_health,
+    }
 
 
 # Authentication Endpoints 

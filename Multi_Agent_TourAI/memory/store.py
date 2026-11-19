@@ -5,6 +5,7 @@ import certifi
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 from langgraph.store.postgres import PostgresStore
+from Multi_Agent_TourAI.database.connection import get_connection_pool, get_db_connection
 from Multi_Agent_TourAI.memory.checkpointer import get_databaseUrl
 from Multi_Agent_TourAI.utils import get_logger, log_execution
 
@@ -20,34 +21,23 @@ os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 @log_execution
 def get_store(run_setup: bool = False) -> PostgresStore:
     """
-    Initializes PostgresStore for LangGraph Long-Term Memory.
+    Initializes PostgresStore for LangGraph Long-Term Memory using the centralized connection pool.
     
     Provides:
       - Permanent storage for user preferences and custom travel profiles.
       - Cross-thread retrieval using namespaces like ("users", user_id).
+      - Concurrent multi-user safe memory access via pooled connections.
 
     When run_setup=True (used strictly by migrations/admin scripts), runs store.setup().
     In normal runtime, operates with DML permissions only without attempting DDL schema alterations.
     """
-    database_url = get_databaseUrl()
-    parsed = urlparse(database_url)
-    logger.info(f"Connecting Long-Term Store to PostgreSQL: Host='{parsed.hostname}', DB='{parsed.path[1:]}'")
-    conn = psycopg.connect(
-        database_url,
-        autocommit=True,
-        row_factory=dict_row
-    )
-    store = PostgresStore(conn)
+    pool = get_connection_pool()
+    store = PostgresStore(pool)
     if run_setup:
         store.setup()
         logger.info("Long-Term Store DDL setup verified via admin context.")
     else:
-        # Runtime verification: check read-only that migration table exists
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM store_migrations LIMIT 1;")
-            if cur.fetchone() is None:
-                raise RuntimeError("PostgreSQL store schema is uninitialized. Run migrations first.")
-        logger.info("Long-Term Store runtime connected & schema confirmed ready.")
+        logger.info("Long-Term Store initialized with connection pool.")
 
     return store
 __all__ = ["get_store"]

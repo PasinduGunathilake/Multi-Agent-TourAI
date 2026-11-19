@@ -40,12 +40,19 @@ def get_tavily_api_key() -> str:
 _mcp_client: Optional[MultiServerMCPClient] = None
 tavily_search_tool: Optional[Any] = None
 _init_lock: Optional[asyncio.Lock] = None
+_init_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
 def _get_init_lock() -> asyncio.Lock:
-    """Returns or creates an asyncio.Lock tied to the current running event loop."""
-    global _init_lock
-    if _init_lock is None:
+    """Returns or creates an asyncio.Lock tied to the currently active running event loop."""
+    global _init_lock, _init_loop
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if _init_lock is None or _init_loop is not current_loop:
+        _init_loop = current_loop
         _init_lock = asyncio.Lock()
     return _init_lock
 
@@ -76,10 +83,11 @@ def get_mcp_client() -> MultiServerMCPClient:
 
 def reset_tavily_cache():
     """Resets internal client and tool caches (useful for testing and reconfiguration)."""
-    global _mcp_client, tavily_search_tool, _init_lock
+    global _mcp_client, tavily_search_tool, _init_lock, _init_loop
     _mcp_client = None
     tavily_search_tool = None
     _init_lock = None
+    _init_loop = None
 
 
 # Module-level client reference for backward compatibility
@@ -149,20 +157,27 @@ async def get_tavily_search_tool():
 
 
 def _parse_tavily_response(raw_result: Any) -> str:
-    """Extracts text content cleanly from varied MCP response shapes."""
+    """Extracts text content cleanly from single or multi-part MCP response shapes."""
     if raw_result is None:
         return ""
     if isinstance(raw_result, str):
         return raw_result
     if isinstance(raw_result, list) and len(raw_result) > 0:
-        first = raw_result[0]
-        if isinstance(first, dict):
-            return first.get("text", str(first))
-        if hasattr(first, "text"):
-            return getattr(first, "text")
-        if hasattr(first, "content"):
-            return str(getattr(first, "content"))
-        return str(first)
+        extracted = []
+        for block in raw_result:
+            if isinstance(block, dict) and "text" in block:
+                extracted.append(block["text"])
+            elif hasattr(block, "text"):
+                extracted.append(getattr(block, "text"))
+            elif hasattr(block, "content"):
+                extracted.append(str(getattr(block, "content")))
+            elif isinstance(block, str):
+                extracted.append(block)
+            elif isinstance(block, dict):
+                extracted.append(str(block.get("content", block)))
+            else:
+                extracted.append(str(block))
+        return "\n".join(extracted) if extracted else str(raw_result)
     if isinstance(raw_result, dict):
         return raw_result.get("text", raw_result.get("content", str(raw_result)))
     if hasattr(raw_result, "content"):

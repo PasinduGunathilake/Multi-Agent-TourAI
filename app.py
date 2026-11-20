@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import json
 import uuid
 import asyncio
@@ -79,7 +80,13 @@ from Multi_Agent_TourAI.auth.auth_repository import (
     create_verification_token,
     complete_password_setup_with_token,
 )
-from Multi_Agent_TourAI.utils import get_logger
+from Multi_Agent_TourAI.utils import (
+    get_logger,
+    get_request_id,
+    set_request_id,
+    reset_request_id,
+    mask_email,
+)
 from Multi_Agent_TourAI.database import (
     get_connection_pool,
     close_connection_pool,
@@ -141,7 +148,52 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
+
+# Request ID & Lifecycle Logging Middleware
+_REQUEST_ID_REGEX = re.compile(r"^[a-zA-Z0-9_\-]{1,64}$")
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """
+    Intercepts incoming HTTP requests to:
+    - Validate or generate a unique X-Request-ID (UUIDv4).
+    - Store the request_id in contextvars for downstream logger propagation.
+    - Measure request execution latency.
+    - Log request completion safely without logging sensitive bodies, headers, or query params.
+    - Return X-Request-ID header to client.
+    """
+    incoming_id = request.headers.get("X-Request-ID", "").strip()
+    if incoming_id and _REQUEST_ID_REGEX.match(incoming_id):
+        req_id = incoming_id
+    else:
+        req_id = str(uuid.uuid4())
+
+    token = set_request_id(req_id)
+    start_time = time.time()
+    path = request.url.path
+
+    try:
+        response = await call_next(request)
+        duration_ms = (time.time() - start_time) * 1000
+        response.headers["X-Request-ID"] = req_id
+
+        # Skip high-frequency health check spam unless it fails
+        if path != "/health" or response.status_code >= 400:
+            logger.info(
+                f"HTTP {request.method} {path} - status={response.status_code} duration={duration_ms:.2f}ms"
+            )
+        return response
+    except Exception as exc:
+        duration_ms = (time.time() - start_time) * 1000
+        logger.error(
+            f"HTTP {request.method} {path} failed after {duration_ms:.2f}ms | Error: {type(exc).__name__}: {str(exc)}",
+            exc_info=True
+        )
+        raise exc
+    finally:
+        reset_request_id(token)
 
 # Request , Response data models
 class TravelRequest(BaseModel):
@@ -683,7 +735,7 @@ async def plan(
     else:
         thread_id = create_user_thread(user.id, title=user_query[:50])
 
-    logger.info(f"Incoming Travel Request: '{user_query}' | Thread: {thread_id} | User: {user.id}")
+    logger.info(f"Incoming Travel Request | Thread: {thread_id} | User: {user.id} | QueryLength: {len(user_query)}")
 
     try:
         # run Multi-Agent Workflow
@@ -717,7 +769,7 @@ async def resume(
             logger.warning(f"Resume feedback blocked by input guardrail | Thread: {thread_id} | Reason: {reason}")
             raise HTTPException(status_code=400, detail=f"Feedback rejected by safety guardrail: {reason}")
 
-    logger.info(f"Incoming Resume Request: Thread={thread_id} | User={user.id} | Approved={payload.approved} | Feedback='{feedback}'")
+    logger.info(f"Incoming Resume Request | Thread: {thread_id} | User: {user.id} | Approved: {payload.approved} | FeedbackLength: {len(feedback)}")
     try:
         result = resume_travel_agent(
             thread_id=thread_id,
@@ -837,7 +889,7 @@ async def plan_stream(
         thread_id = create_user_thread(user.id, title=user_query[:50])
 
     user_id = user.user_id_str
-    logger.info(f"Incoming Real-time Streaming Request: '{user_query}' | Thread: {thread_id} | User: {user_id}")
+    logger.info(f"Incoming Streaming Travel Request | Thread: {thread_id} | User: {user_id} | QueryLength: {len(user_query)}")
 
     config = {
         "configurable": {
@@ -953,6 +1005,9 @@ async def plan_stream(
             }
             yield f"data: {json.dumps(complete_payload)}\n\n"
 
+        except asyncio.CancelledError:
+            logger.info(f"SSE client disconnected | Thread: {thread_id} | Stream closed normally by client.")
+            raise
         except Exception as e:
             logger.error(f"Error in streaming Multi-Agent workflow: {str(e)}", exc_info=True)
             yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
@@ -989,7 +1044,7 @@ async def resume_stream(
             raise HTTPException(status_code=400, detail=f"Feedback rejected by safety guardrail: {reason}")
 
     user_id = user.user_id_str
-    logger.info(f"Incoming Streaming Resume: Thread={thread_id} | User={user_id} | Approved={payload.approved} | Feedback='{feedback}'")
+    logger.info(f"Incoming Streaming Resume | Thread: {thread_id} | User: {user_id} | Approved: {payload.approved} | FeedbackLength: {len(feedback)}")
 
     config = {
         "configurable": {
@@ -1048,6 +1103,9 @@ async def resume_stream(
             }
             yield f"data: {json.dumps(complete_payload)}\n\n"
 
+        except asyncio.CancelledError:
+            logger.info(f"SSE client disconnected | Thread: {thread_id} | Stream closed normally by client.")
+            raise
         except Exception as e:
             logger.error(f"Error in streaming resume workflow: {str(e)}", exc_info=True)
             yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"

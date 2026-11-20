@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Zap, ShieldCheck, Cpu, GitBranch, UserCheck, Network, Lock } from "lucide-react";
+import { Zap, ShieldCheck, GitBranch, UserCheck, Network, Lock } from "lucide-react";
 import ScrollReveal from "./ScrollReveal";
 import { GlowingEffect } from "./ui/glowing-effect";
 

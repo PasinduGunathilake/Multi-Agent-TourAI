@@ -13,7 +13,7 @@ import ScrollReveal from "@/components/ScrollReveal";
 import HeroGlobe from "@/components/HeroGlobe";
 import { HeroHighlight } from "@/components/ui/hero-highlight";
 import { GlowingEffect } from "@/components/ui/glowing-effect";
-import { Plus, LogIn } from "lucide-react";
+import { Plus, LogIn, Menu } from "lucide-react";
 import { TypewriterEffect, TypewriterWord } from "@/components/ui/typewriter-effect";
 import { useAuth } from "@/contexts/AuthContext";
 import AuthModal from "@/components/AuthModal";
@@ -53,17 +53,12 @@ const defaultAgentStatus = () => ({
 export default function HomePage() {
   const { user, isLoading: authLoading, getToken } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const [hasStarted, setHasStarted] = useState(false);
   const [activeView, setActiveView] = useState<"chat" | "explore" | "telemetry">("chat");
   const [isPlanning, setIsPlanning] = useState(false);
   const [sessionId, setSessionId] = useState<string>("");
-
-  useEffect(() => {
-    if (!sessionId) {
-      setSessionId(`session_${Date.now()}`);
-    }
-  }, [sessionId]);
 
   // ── Multi-Turn Thread ────────────────────────────────────────────────────
   const [turns, setTurns] = useState<ChatTurn[]>([]);
@@ -143,7 +138,7 @@ export default function HomePage() {
   }, [turns, sessionId]);
 
   // ── Reset ────────────────────────────────────────────────────────────────
-  const resetToNewTrip = () => {
+  const resetToNewTrip = useCallback(() => {
     isSwitchingSessionRef.current = true;
     setSessionId(`session_${Date.now()}`);
     setHasStarted(false);
@@ -152,7 +147,16 @@ export default function HomePage() {
     setTimeout(() => {
       isSwitchingSessionRef.current = false;
     }, 100);
-  };
+  }, []);
+
+  // When user logs out, automatically clear active chat and navigate back to frontpage
+  const prevUserRef = useRef(user);
+  useEffect(() => {
+    if (prevUserRef.current && !user) {
+      resetToNewTrip();
+    }
+    prevUserRef.current = user;
+  }, [user, resetToNewTrip]);
 
   // ── Load existing session (sidebar click) ────────────────────────────────
   const handleLoadSession = async (sid: string) => {
@@ -214,7 +218,7 @@ export default function HomePage() {
         const history: JourneySession[] = JSON.parse(raw);
         const found = history.find((s) => s.sessionId === sid);
         if (found?.turns && Array.isArray(found.turns) && found.turns.length > 0) {
-          const restored = found.turns.map((t) => ({
+          const restored = (found.turns as unknown as ChatTurn[]).map((t) => ({
             ...t,
             isStreaming: false,
             isResuming: false,
@@ -247,7 +251,7 @@ export default function HomePage() {
   };
 
   // ── Main Plan Trip Handler ───────────────────────────────────────────────
-  const handlePlanTrip = async (searchQuery: string, _mode: string = "all") => {
+  const handlePlanTrip = async (searchQuery: string) => {
     if (!searchQuery.trim() || isPlanning) return;
 
     if (!user) {
@@ -283,8 +287,13 @@ export default function HomePage() {
     setTurns((prev) => [...prev, userTurn, assistantTurn]);
     saveSessionToHistory(searchQuery);
 
+    const activeSid = sessionId || `session_${Date.now()}`;
+    if (!sessionId) {
+      setSessionId(activeSid);
+    }
+
     // If local temporary id, pass null so backend generates a verified UUID registered in user_threads
-    const backendThreadId = sessionId.startsWith("session_") ? null : sessionId;
+    const backendThreadId = !activeSid || activeSid.startsWith("session_") ? null : activeSid;
 
     try {
       await streamPlanTrip(
@@ -498,92 +507,113 @@ export default function HomePage() {
     }
   };
 
+  // Shared resume stream logic
+  const runResumeStream = useCallback(
+    async (
+      turnId: string,
+      approved: boolean,
+      feedback: string,
+      startTime: number
+    ) => {
+      try {
+        await streamResumeTrip(
+          sessionId,
+          approved,
+          feedback,
+          (ev) => {
+            if (ev.event === "token" && ev.token) {
+              setTurns((prev) =>
+                prev.map((t) =>
+                  t.id === turnId
+                    ? { ...t, planResult: (t.planResult || "") + ev.token, isStreaming: true }
+                    : t
+                )
+              );
+            } else if (ev.event === "complete") {
+              updateTurn(turnId, {
+                isStreaming: false,
+                isResuming: false,
+                planResult: ev.answer || undefined,
+                flightData: ev.flight_results || undefined,
+                hotelData: ev.hotel_results || undefined,
+                weatherData: ev.weather_results || undefined,
+                mapsData: ev.maps_results || undefined,
+                itineraryData: ev.itinerary || undefined,
+                llmCalls: ev.llm_calls,
+                agentStatus: {
+                  ...defaultAgentStatus(),
+                  step: 4,
+                  flightAgent: "done",
+                  hotelAgent: "done",
+                  weatherAgent: "done",
+                  mapsAgent: "done",
+                  itineraryAgent: "done",
+                  finalAgent: "done",
+                  currentAgent: "Complete",
+                  elapsedMs: Date.now() - startTime,
+                },
+              });
+            } else if (ev.event === "error") {
+              updateTurn(turnId, {
+                isStreaming: false,
+                isResuming: false,
+                planResult: `⚠ Resume error: ${ev.message}`,
+              });
+            }
+          },
+          getToken
+        );
+      } catch (err: unknown) {
+        console.error("Resume Error:", err);
+        const msg = (err as Error)?.message || "Failed to resume session.";
+        updateTurn(turnId, {
+          isStreaming: false,
+          isResuming: false,
+          planResult: `⚠ ${msg}`,
+        });
+      } finally {
+        setIsPlanning(false);
+      }
+    },
+    [sessionId, getToken, updateTurn]
+  );
+
   // ── HITL Resume (Approve) ────────────────────────────────────────────────
-  const handleApprove = async (turnId: string) => {
-    if (!user) {
-      setAuthModalOpen(true);
-      return;
-    }
+  const handleApprove = useCallback(
+    async (turnId: string) => {
+      if (!user) {
+        setAuthModalOpen(true);
+        return;
+      }
 
-    const turn = turns.find((t) => t.id === turnId);
-    if (!turn) return;
+      const turn = turns.find((t) => t.id === turnId);
+      if (!turn) return;
 
-    updateTurn(turnId, { isResuming: true, approvalResolved: "approved" });
-    setIsPlanning(true);
-    const startTime = Date.now();
+      updateTurn(turnId, { isResuming: true, approvalResolved: "approved" });
+      setIsPlanning(true);
+      const startTime = Date.now();
 
-    await runResumeStream(turnId, true, "", startTime);
-  };
+      await runResumeStream(turnId, true, "", startTime);
+    },
+    [user, turns, updateTurn, runResumeStream]
+  );
 
   // ── HITL Resume (Revise) ─────────────────────────────────────────────────
-  const handleRevise = async (turnId: string, feedback: string) => {
-    if (!user) {
-      setAuthModalOpen(true);
-      return;
-    }
+  const handleRevise = useCallback(
+    async (turnId: string, feedback: string) => {
+      if (!user) {
+        setAuthModalOpen(true);
+        return;
+      }
 
-    updateTurn(turnId, { isResuming: true, approvalResolved: "revised" });
-    setIsPlanning(true);
-    const startTime = Date.now();
+      updateTurn(turnId, { isResuming: true, approvalResolved: "revised" });
+      setIsPlanning(true);
+      const startTime = Date.now();
 
-    await runResumeStream(turnId, false, feedback, startTime);
-  };
-
-  // Shared resume stream logic
-  const runResumeStream = async (
-    turnId: string,
-    approved: boolean,
-    feedback: string,
-    _startTime: number
-  ) => {
-    try {
-      await streamResumeTrip(
-        sessionId,
-        approved,
-        feedback,
-        (ev) => {
-          if (ev.event === "token" && ev.token) {
-            setTurns((prev) =>
-              prev.map((t) =>
-                t.id === turnId
-                  ? { ...t, planResult: (t.planResult || "") + ev.token, isStreaming: true }
-                  : t
-              )
-            );
-          } else if (ev.event === "complete") {
-            updateTurn(turnId, {
-              isStreaming: false,
-              isResuming: false,
-              planResult: ev.answer || undefined,
-              flightData: ev.flight_results || undefined,
-              hotelData: ev.hotel_results || undefined,
-              weatherData: ev.weather_results || undefined,
-              mapsData: ev.maps_results || undefined,
-              itineraryData: ev.itinerary || undefined,
-              llmCalls: ev.llm_calls,
-            });
-          } else if (ev.event === "error") {
-            updateTurn(turnId, {
-              isStreaming: false,
-              isResuming: false,
-              planResult: `⚠ Resume error: ${ev.message}`,
-            });
-          }
-        },
-        getToken
-      );
-    } catch (err: unknown) {
-      console.error("Resume Error:", err);
-      const msg = (err as Error)?.message || "Failed to resume session.";
-      updateTurn(turnId, {
-        isStreaming: false,
-        isResuming: false,
-        planResult: `⚠ ${msg}`,
-      });
-    } finally {
-      setIsPlanning(false);
-    }
-  };
+      await runResumeStream(turnId, false, feedback, startTime);
+    },
+    [user, updateTurn, runResumeStream]
+  );
 
   // ── Checkpoint Restore Handler ───────────────────────────────────────────
   const handleRestoreCheckpoint = (targetTurnId: string) => {
@@ -612,7 +642,7 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-screen bg-[#000000] text-white w-full">
-      {/* Permanent Fixed Sidebar */}
+      {/* Permanent Fixed Sidebar on Desktop, Responsive Drawer on Mobile */}
       <AppSidebar
         onNewTrip={resetToNewTrip}
         activeView={activeView}
@@ -620,10 +650,12 @@ export default function HomePage() {
         currentSessionId={sessionId}
         onLoadSession={handleLoadSession}
         onOpenAuth={() => setAuthModalOpen(true)}
+        isOpenMobile={mobileNavOpen}
+        onCloseMobile={() => setMobileNavOpen(false)}
       />
 
-      {/* Main Content Layout — permanently offset by pl-64 */}
-      <div className="flex-1 flex flex-col min-h-screen relative overflow-x-hidden pl-64">
+      {/* Main Content Layout — responsive offset (pl-0 on mobile, pl-64 on desktop) */}
+      <div className="flex-1 flex flex-col min-h-screen relative overflow-x-hidden pl-0 md:pl-64">
         {/* Grain overlay */}
         <div className="grain" aria-hidden="true" />
 
@@ -634,15 +666,27 @@ export default function HomePage() {
           <div className="flex-1 flex flex-col justify-between relative z-10">
             {/* Top Nav Bar */}
             <ScrollReveal direction="down" durationMs={600} delayMs={50}>
-              <header className="w-full flex items-center justify-between px-8 py-5 border-b border-white/5 bg-black/40 backdrop-blur-md">
-                <div className="flex items-center gap-2.5">
+              <header className="w-full flex items-center justify-between px-4 sm:px-8 py-3.5 sm:py-5 border-b border-white/5 bg-black/40 backdrop-blur-md">
+                <div className="flex items-center gap-2 sm:gap-2.5">
+                  {/* Mobile Drawer Trigger */}
+                  <button
+                    type="button"
+                    onClick={() => setMobileNavOpen(true)}
+                    className="md:hidden p-1.5 -ml-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                    aria-label="Open sidebar menu"
+                    aria-expanded={mobileNavOpen}
+                    aria-controls="app-sidebar-drawer"
+                  >
+                    <Menu className="w-5 h-5" />
+                  </button>
+
                   <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-md shrink-0">
                     <span className="text-black font-black text-sm tracking-tighter">.\\</span>
                   </div>
-                  <span className="text-xl font-bold text-white tracking-tight flex items-center">
+                  <span className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center">
                     TourAI<span className="text-teal-400">.ai</span>
                   </span>
-                  <span className="text-[10px] font-medium px-0.5 py-0.5 text-teal-300 ml-2">
+                  <span className="hidden sm:inline-block text-[10px] font-medium px-0.5 py-0.5 text-teal-300 ml-2">
                     Powered by LangGraph
                   </span>
                 </div>
@@ -700,7 +744,7 @@ export default function HomePage() {
 
                   <ScrollReveal direction="scale" durationMs={850} delayMs={360} className="w-full mb-8">
                     <ChatInput
-                      onSend={(msg, mode) => handlePlanTrip(msg, mode)}
+                      onSend={(msg) => handlePlanTrip(msg)}
                       isLoading={isPlanning}
                       isDockedBottom={false}
                     />
@@ -742,10 +786,22 @@ export default function HomePage() {
           /* ═══════════════════════════════════════════════════ */
           <div className="flex-1 flex flex-col relative z-10 min-h-screen">
             {/* Sticky Chat Header */}
-            <header className="sticky top-0 z-30 w-full flex items-center justify-between px-6 py-3.5 border-b border-white/8 bg-[#07090e]/90 backdrop-blur-xl">
-              <div className="flex items-center gap-3 min-w-0">
+            <header className="sticky top-0 z-30 w-full flex items-center justify-between px-4 sm:px-6 py-3 sm:py-3.5 border-b border-white/8 bg-[#07090e]/90 backdrop-blur-xl">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                {/* Mobile Drawer Trigger in Chat */}
+                <button
+                  type="button"
+                  onClick={() => setMobileNavOpen(true)}
+                  className="md:hidden p-1.5 -ml-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                  aria-label="Open sidebar menu"
+                  aria-expanded={mobileNavOpen}
+                  aria-controls="app-sidebar-drawer"
+                >
+                  <Menu className="w-4 h-4" />
+                </button>
+
                 {/* Journey title — first user message */}
-                <span className="text-medium font-semibold text-white tracking-tight truncate max-w-xs sm:max-w-md">
+                <span className="text-sm sm:text-base font-semibold text-white tracking-tight truncate max-w-[170px] xs:max-w-xs sm:max-w-md">
                   {turns.find((t) => t.role === "user")?.userContent || "New Journey"}
                 </span>
 
@@ -784,11 +840,11 @@ export default function HomePage() {
               />
             </main>
 
-            {/* ── Floating Docked Chat Input permanently offset for sidebar (left-64) ── */}
-            <div className="fixed bottom-6 left-64 right-0 flex justify-center z-40 px-4 pointer-events-none">
+            {/* ── Floating Docked Chat Input responsively offset for sidebar (left-0 on mobile, left-64 on desktop) ── */}
+            <div className="fixed bottom-4 sm:bottom-6 left-0 md:left-64 right-0 flex justify-center z-40 px-3 sm:px-4 pointer-events-none">
               <div className="pointer-events-auto w-full max-w-3xl">
                 <ChatInput
-                  onSend={(msg, mode) => handlePlanTrip(msg, mode)}
+                  onSend={(msg) => handlePlanTrip(msg)}
                   isLoading={isPlanning}
                   isDockedBottom={true}
                 />

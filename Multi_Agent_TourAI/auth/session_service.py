@@ -230,9 +230,9 @@ def revoke_all_user_sessions(user_id: uuid.UUID) -> int:
             return cur.rowcount
 
 
-def set_refresh_cookie(response: Response, raw_token: str) -> None:
+def set_refresh_cookie(response: Response, raw_token: str, remember_me: bool = True) -> None:
     """Sets a secure HttpOnly refresh token cookie on the HTTP response."""
-    max_age = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+    max_age = (REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60) if remember_me else None
     response.set_cookie(
         key=REFRESH_TOKEN_COOKIE_NAME,
         value=raw_token,

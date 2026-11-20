@@ -5,6 +5,7 @@ import uuid
 import asyncio
 import uvicorn
 import urllib.parse
+from datetime import datetime, timezone
 from typing import Any
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -47,7 +48,23 @@ from Multi_Agent_TourAI.auth import (
     RefreshTokenRecentlyRotatedError,
     generate_google_auth_url,
     process_google_callback,
+    ForgotPasswordRequest,
+    VerifyResetOtpRequest,
+    ResendResetOtpRequest,
+    ResetPasswordRequest,
+    VerifyOtpResponse,
+    GenericMessageResponse,
+    ensure_password_reset_table,
+    generate_secure_otp,
+    create_password_reset_otp,
+    verify_password_reset_otp,
+    reset_password_with_token,
+    get_last_otp_created_at,
+    OTP_EXPIRATION_MINUTES,
+    RESEND_COOLDOWN_SECONDS,
+    send_password_reset_email,
 )
+from Multi_Agent_TourAI.auth.rate_limiter import get_rate_limiter
 from Multi_Agent_TourAI.auth.auth_repository import (
     get_user_by_email,
     get_user_by_id,
@@ -86,6 +103,7 @@ async def lifespan(app: FastAPI):
         get_connection_pool()
         health = check_database_health()
         logger.info(f"[LIFESPAN] Database connection pool healthy: {health}")
+        ensure_password_reset_table()
     except Exception as e:
         logger.error(f"[LIFESPAN] Warning: Database pool initialization check encountered an issue: {e}")
     
@@ -311,6 +329,170 @@ async def auth_complete_password_setup(payload: CompletePasswordSetupRequest, re
         access_token=access_token,
         user=_to_public_user(updated_user),
     )
+
+
+@app.post("/api/auth/forgot-password", response_model=GenericMessageResponse)
+async def auth_forgot_password(payload: ForgotPasswordRequest, request: Request):
+    """
+    Step 1: Request Password Reset.
+    Generates a secure, 6-digit time-limited OTP and emails it to the registered user.
+    Always returns a generic enumeration-safe success message.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limiter = get_rate_limiter()
+    is_limited, retry_after = rate_limiter.is_rate_limited(client_ip, "forgot_password")
+    if is_limited:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many reset requests. Please retry in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    email = payload.email.strip().lower()
+    generic_msg = "If an account exists with this email address, a password reset code has been sent."
+
+    user_row = get_user_by_email(email)
+    if not user_row:
+        return GenericMessageResponse(message=generic_msg)
+
+    # Safe handling of OAuth-only accounts: Do not generate/overwrite local passwords for Google OAuth users
+    email_identity = get_email_identity(email)
+    if not email_identity or not email_identity.get("password_hash"):
+        logger.info(f"[AUTH] Forgot password requested for OAuth-only account: {email}. Suppressing OTP generation.")
+        return GenericMessageResponse(message=generic_msg)
+
+    user_id = user_row["id"]
+
+    # Enforce 60-second resend cooldown
+    last_created = get_last_otp_created_at(user_id)
+    if last_created:
+        elapsed = (datetime.now(timezone.utc) - last_created).total_seconds()
+        if elapsed < RESEND_COOLDOWN_SECONDS:
+            remaining = int(RESEND_COOLDOWN_SECONDS - elapsed)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Please wait {remaining} seconds before requesting a new code.",
+                headers={"Retry-After": str(remaining)},
+            )
+
+    otp = generate_secure_otp()
+    create_password_reset_otp(user_id, otp, expires_in_minutes=OTP_EXPIRATION_MINUTES)
+    email_sent = send_password_reset_email(email, otp)
+    if not email_sent:
+        logger.warning(f"[AUTH] Email delivery failure for password reset to {email}")
+
+    return GenericMessageResponse(message=generic_msg)
+
+
+@app.post("/api/auth/verify-reset-otp", response_model=VerifyOtpResponse)
+async def auth_verify_reset_otp(payload: VerifyResetOtpRequest, request: Request):
+    """
+    Step 2: Verify 6-digit OTP.
+    Validates entered OTP against salted hash, enforces max 5 attempts and 5-min expiration.
+    Returns a single-use cryptographically secure reset_token.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limiter = get_rate_limiter()
+    is_limited, retry_after = rate_limiter.is_rate_limited(client_ip, "verify_otp")
+    if is_limited:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many verification attempts. Please retry in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    email = payload.email.strip().lower()
+    user_row = get_user_by_email(email)
+    if not user_row:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code.")
+
+    user_id = user_row["id"]
+    success, reset_token, message = verify_password_reset_otp(user_id, payload.otp)
+    if not success or not reset_token:
+        raise HTTPException(status_code=400, detail=message)
+
+    return VerifyOtpResponse(
+        message=message,
+        reset_token=reset_token,
+    )
+
+
+@app.post("/api/auth/reset-password", response_model=GenericMessageResponse)
+async def auth_reset_password(payload: ResetPasswordRequest, request: Request):
+    """
+    Step 3: Set New Password.
+    Verifies single-use reset token, enforces password policy, updates Argon2id hash,
+    and invalidates all existing user sessions.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limiter = get_rate_limiter()
+    is_limited, retry_after = rate_limiter.is_rate_limited(client_ip, "reset_password")
+    if is_limited:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many password reset attempts. Please retry in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if payload.confirm_password is not None and payload.new_password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match.")
+
+    valid, reason = validate_password(payload.new_password)
+    if not valid:
+        raise HTTPException(status_code=400, detail=reason)
+
+    pwd_hash = hash_password(payload.new_password)
+    success, message = reset_password_with_token(payload.reset_token, pwd_hash)
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+
+    return GenericMessageResponse(message=message)
+
+
+@app.post("/api/auth/resend-reset-otp", response_model=GenericMessageResponse)
+async def auth_resend_reset_otp(payload: ResendResetOtpRequest, request: Request):
+    """
+    Resends a fresh 6-digit OTP to the registered user with a 60-second cooldown check.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limiter = get_rate_limiter()
+    is_limited, retry_after = rate_limiter.is_rate_limited(client_ip, "resend_otp")
+    if is_limited:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many resend requests. Please retry in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    email = payload.email.strip().lower()
+    generic_msg = "If an account exists with this email address, a password reset code has been sent."
+
+    user_row = get_user_by_email(email)
+    if not user_row:
+        return GenericMessageResponse(message=generic_msg)
+
+    email_identity = get_email_identity(email)
+    if not email_identity or not email_identity.get("password_hash"):
+        logger.info(f"[AUTH] Resend OTP requested for OAuth-only account: {email}. Suppressing.")
+        return GenericMessageResponse(message=generic_msg)
+
+    user_id = user_row["id"]
+    last_created = get_last_otp_created_at(user_id)
+    if last_created:
+        elapsed = (datetime.now(timezone.utc) - last_created).total_seconds()
+        if elapsed < RESEND_COOLDOWN_SECONDS:
+            remaining = int(RESEND_COOLDOWN_SECONDS - elapsed)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Please wait {remaining} seconds before requesting a new code.",
+                headers={"Retry-After": str(remaining)},
+            )
+
+    otp = generate_secure_otp()
+    create_password_reset_otp(user_id, otp, expires_in_minutes=OTP_EXPIRATION_MINUTES)
+    send_password_reset_email(email, otp)
+
+    return GenericMessageResponse(message=generic_msg)
 
 
 @app.get("/api/auth/google")

@@ -1,5 +1,5 @@
 -- ==============================================================================
--- Multi-Agent-TourAI: Phase 2C Database Migration
+-- Multi-Agent-TourAI:
 -- Migration: 002_create_application_auth.sql
 -- Description: Establishes application-owned authentication tables (app_users,
 --              auth_identities, auth_sessions, auth_verification_tokens),

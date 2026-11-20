@@ -14,6 +14,15 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface GenericMessageResponse {
+  message: string;
+}
+
+export interface VerifyOtpResponse {
+  message: string;
+  reset_token: string;
+}
+
 export interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -25,5 +34,9 @@ export interface AuthContextType {
   initiateGoogleLogin: () => Promise<void>;
   requestPasswordSetup: (email: string) => Promise<{ success: boolean; message: string }>;
   completePasswordSetup: (token: string, newPassword: string) => Promise<{ error: string | null }>;
+  forgotPassword: (email: string) => Promise<{ success: boolean; message: string }>;
+  verifyResetOtp: (email: string, otp: string) => Promise<{ success: boolean; resetToken?: string; message: string }>;
+  resetPassword: (resetToken: string, newPassword: string, confirmPassword?: string) => Promise<{ success: boolean; message: string }>;
+  resendResetOtp: (email: string) => Promise<{ success: boolean; message: string }>;
 }
 

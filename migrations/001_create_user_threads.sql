@@ -1,5 +1,5 @@
 -- ==============================================================================
--- Multi-Agent-TourAI: Phase 2 Database Migration
+-- Multi-Agent-TourAI:
 -- Migration: 001_create_user_threads.sql
 -- Description: Creates the user_threads ownership table with Row-Level Security (RLS)
 --              to bind LangGraph threads to authenticated Supabase users.

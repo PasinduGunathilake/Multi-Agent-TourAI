@@ -17,6 +17,8 @@ import {
   getGoogleAuthUrlApi,
   requestPasswordSetupApi,
   completePasswordSetupApi,
+  checkEmailApi,
+  validateResetEmailApi,
   forgotPasswordApi,
   verifyResetOtpApi,
   resetPasswordApi,
@@ -251,6 +253,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const checkEmail = async (
+    email: string
+  ): Promise<{ exists: boolean; hasPassword: boolean; isOAuth: boolean; message: string }> => {
+    try {
+      const res = await checkEmailApi(email);
+      return {
+        exists: res.exists,
+        hasPassword: res.has_password,
+        isOAuth: res.is_oauth,
+        message: res.message,
+      };
+    } catch {
+      return {
+        exists: false,
+        hasPassword: false,
+        isOAuth: false,
+        message: "Failed to verify email address.",
+      };
+    }
+  };
+
+  const validateResetEmail = async (
+    email: string
+  ): Promise<{ success: boolean; message: string; email?: string }> => {
+    try {
+      const res = await validateResetEmailApi(email);
+      return { success: true, message: res.message, email: res.email };
+    } catch (err: unknown) {
+      const msg = err instanceof AuthApiError ? err.message : "Failed to validate email address.";
+      return { success: false, message: msg };
+    }
+  };
+
   const forgotPassword = async (
     email: string
   ): Promise<{ success: boolean; message: string }> => {
@@ -317,6 +352,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         initiateGoogleLogin,
         requestPasswordSetup,
         completePasswordSetup,
+        checkEmail,
+        validateResetEmail,
         forgotPassword,
         verifyResetOtp,
         resetPassword,

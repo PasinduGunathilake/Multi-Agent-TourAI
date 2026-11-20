@@ -136,6 +136,30 @@ export async function completePasswordSetupApi(
   return data;
 }
 
+export async function checkEmailApi(
+  email: string
+): Promise<{ email: string; exists: boolean; has_password: boolean; is_oauth: boolean; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/check-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email: email.trim().toLowerCase() }),
+  });
+  return parseResponse<{ email: string; exists: boolean; has_password: boolean; is_oauth: boolean; message: string }>(res);
+}
+
+export async function validateResetEmailApi(
+  email: string
+): Promise<{ valid: boolean; email: string; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/validate-reset-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email: email.trim().toLowerCase() }),
+  });
+  return parseResponse<{ valid: boolean; email: string; message: string }>(res);
+}
+
 export async function forgotPasswordApi(
   email: string
 ): Promise<GenericMessageResponse> {

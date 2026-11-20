@@ -36,6 +36,8 @@ export interface AuthContextType {
   initiateGoogleLogin: () => Promise<{ error: string | null }>;
   requestPasswordSetup: (email: string) => Promise<{ success: boolean; message: string }>;
   completePasswordSetup: (token: string, newPassword: string) => Promise<{ error: string | null }>;
+  checkEmail: (email: string) => Promise<{ exists: boolean; hasPassword: boolean; isOAuth: boolean; message: string }>;
+  validateResetEmail: (email: string) => Promise<{ success: boolean; message: string; email?: string }>;
   forgotPassword: (email: string) => Promise<{ success: boolean; message: string }>;
   verifyResetOtp: (email: string, otp: string) => Promise<{ success: boolean; resetToken?: string; message: string }>;
   resetPassword: (resetToken: string, newPassword: string, confirmPassword?: string) => Promise<{ success: boolean; message: string }>;

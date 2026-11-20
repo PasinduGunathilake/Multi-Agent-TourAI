@@ -61,16 +61,42 @@ export function LoginForm({
   const [setupToken, setSetupToken] = useState("");
   const [otp, setOtp] = useState("");
   const [resetToken, setResetToken] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [countdown, setCountdown] = useState(RESEND_DELAY);
+  // Timestamp-based resend countdown persisted across remounts
+  const getRemainingCooldown = (): number => {
+    if (typeof window === "undefined") return RESEND_DELAY;
+    try {
+      const stored = sessionStorage.getItem("tourai_otp_cooldown_target");
+      if (stored) {
+        const target = parseInt(stored, 10);
+        const remaining = Math.ceil((target - Date.now()) / 1000);
+        return remaining > 0 ? remaining : 0;
+      }
+    } catch {}
+    return 0;
+  };
+
+  const setCooldownTarget = (seconds: number) => {
+    try {
+      if (typeof window !== "undefined") {
+        const target = Date.now() + seconds * 1000;
+        sessionStorage.setItem("tourai_otp_cooldown_target", target.toString());
+      }
+    } catch {}
+    setCountdown(seconds);
+  };
+
+  const [countdown, setCountdown] = useState<number>(() => getRemainingCooldown());
   const canResend = countdown === 0;
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTokenExpired, setIsTokenExpired] = useState(false);
 
   const {
     login,
@@ -81,18 +107,39 @@ export function LoginForm({
     verifyResetOtp,
     resetPassword,
     resendResetOtp,
+    oauthError,
+    clearOAuthError,
   } = useAuth();
+
+  // Active error combines local form errors and Google OAuth callback errors
+  const effectiveError = errorMsg || oauthError;
 
   // Resend cooldown timer for OTP verification step
   useEffect(() => {
-    if (mode !== "verify-otp" || countdown === 0) {
-      return;
+    if (mode !== "verify-otp") return;
+
+    const updateTimer = () => {
+      const rem = getRemainingCooldown();
+      setCountdown(rem);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [mode]);
+
+  // Autofocus first OTP slot on transition to verify-otp
+  useEffect(() => {
+    if (mode === "verify-otp") {
+      const timer = setTimeout(() => {
+        const firstSlot = document.querySelector<HTMLInputElement>(
+          '[data-slot="input-otp-slot"][tabindex="0"], input[autocomplete="one-time-code"]'
+        );
+        firstSlot?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
     }
-    const timer = setTimeout(() => {
-      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [mode, countdown]);
+  }, [mode]);
 
   // Real-time password criteria
   const hasMinLength = password.length >= 8;
@@ -104,8 +151,10 @@ export function LoginForm({
   // Handle Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    clearOAuthError();
     setErrorMsg(null);
     setSuccessMsg(null);
+    setIsTokenExpired(false);
 
     const cleanEmail = email.trim();
 
@@ -119,7 +168,7 @@ export function LoginForm({
       try {
         const { message } = await forgotPassword(cleanEmail);
         setSuccessMsg(message);
-        setCountdown(RESEND_DELAY);
+        setCooldownTarget(RESEND_DELAY);
         setOtp("");
         setMode("verify-otp");
       } finally {
@@ -183,6 +232,9 @@ export function LoginForm({
           }, 1800);
         } else {
           setErrorMsg(message);
+          if (message.toLowerCase().includes("expired") || message.toLowerCase().includes("invalid")) {
+            setIsTokenExpired(true);
+          }
         }
       } finally {
         setIsSubmitting(false);
@@ -221,15 +273,26 @@ export function LoginForm({
       return;
     }
 
-    if (password.length < 8) {
-      setErrorMsg("Password must be at least 8 characters.");
-      return;
+    if (mode === "signup") {
+      if (!isPasswordValid) {
+        setErrorMsg("Password must be at least 8 characters and include both letters and numbers/symbols.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setErrorMsg("Passwords do not match.");
+        return;
+      }
+    } else {
+      if (password.length < 8) {
+        setErrorMsg("Password must be at least 8 characters.");
+        return;
+      }
     }
 
     setIsSubmitting(true);
     try {
       if (mode === "signin") {
-        const { error } = await login(cleanEmail, password);
+        const { error } = await login(cleanEmail, password, rememberMe);
         if (error) {
           if (error.includes("CREDENTIAL_SETUP_REQUIRED")) {
             setErrorMsg(
@@ -242,7 +305,7 @@ export function LoginForm({
           onSuccess?.();
         }
       } else {
-        const { error } = await register(cleanEmail, password, displayName);
+        const { error } = await register(cleanEmail, password, displayName.trim());
         if (error) {
           setErrorMsg(error);
         } else {
@@ -264,7 +327,7 @@ export function LoginForm({
     try {
       const { success, message } = await resendResetOtp(email.trim());
       if (success) {
-        setCountdown(RESEND_DELAY);
+        setCooldownTarget(RESEND_DELAY);
         setOtp("");
         setSuccessMsg("A new verification code has been sent to your email.");
       } else {
@@ -272,6 +335,16 @@ export function LoginForm({
       }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Safe Google OAuth initiator with inline error feedback
+  const handleGoogleLogin = async () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    const { error } = await initiateGoogleLogin();
+    if (error) {
+      setErrorMsg(error);
     }
   };
 
@@ -323,10 +396,27 @@ export function LoginForm({
               </div>
 
               {/* Error and Success Alerts */}
-              {errorMsg && (
-                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div className="leading-relaxed flex-1">{errorMsg}</div>
+              {effectiveError && (
+                <div className="flex flex-col gap-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div className="leading-relaxed flex-1">{effectiveError}</div>
+                  </div>
+                  {isTokenExpired && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setMode("forgot");
+                        setIsTokenExpired(false);
+                        setErrorMsg(null);
+                        clearOAuthError();
+                      }}
+                      className="w-full mt-1 text-xs text-teal-300 border-teal-500/30 hover:bg-teal-500/10"
+                    >
+                      Request New Verification Code
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -344,6 +434,7 @@ export function LoginForm({
                   <Input
                     id="display-name"
                     type="text"
+                    maxLength={50}
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     placeholder="Travel Explorer"
@@ -411,6 +502,87 @@ export function LoginForm({
                 </div>
               )}
 
+              {/* Password Fields for Registration Mode */}
+              {mode === "signup" && (
+                <>
+                  <Field>
+                    <FieldLabel htmlFor="password">Password</FieldLabel>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••••••"
+                        required
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors cursor-pointer p-1"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4 text-white/70 hover:text-white" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-white/70 hover:text-white" />
+                        )}
+                      </button>
+                    </div>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="confirm-password">Confirm Password</FieldLabel>
+                    <div className="relative">
+                      <Input
+                        id="confirm-password"
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="••••••••••••"
+                        required
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors cursor-pointer p-1"
+                        aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="w-4 h-4 text-white/70 hover:text-white" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-white/70 hover:text-white" />
+                        )}
+                      </button>
+                    </div>
+                  </Field>
+
+                  {/* Password Criteria Feedback for Registration */}
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5 text-[11px]">
+                    <div className={cn("flex items-center gap-1.5", hasMinLength ? "text-teal-400" : "text-white/40")}>
+                      {hasMinLength ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                      <span>At least 8 characters</span>
+                    </div>
+                    <div className={cn("flex items-center gap-1.5", hasLetter ? "text-teal-400" : "text-white/40")}>
+                      {hasLetter ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                      <span>Contains at least one letter</span>
+                    </div>
+                    <div className={cn("flex items-center gap-1.5", hasNumberOrSymbol ? "text-teal-400" : "text-white/40")}>
+                      {hasNumberOrSymbol ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                      <span>Contains a number or special character</span>
+                    </div>
+                    {confirmPassword.length > 0 && (
+                      <div className={cn("flex items-center gap-1.5", passwordsMatch ? "text-teal-400" : "text-rose-400")}>
+                        {passwordsMatch ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                        <span>{passwordsMatch ? "Passwords match" : "Passwords do not match"}</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
               {/* Step 3: New Password Screen */}
               {mode === "new-password" && (
                 <>
@@ -429,9 +601,10 @@ export function LoginForm({
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors cursor-pointer p-1"
+                        aria-label={showPassword ? "Hide new password" : "Show new password"}
                       >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        {showPassword ? <EyeOff className="w-4 h-4 text-white/70 hover:text-white" /> : <Eye className="w-4 h-4 text-white/70 hover:text-white" />}
                       </button>
                     </div>
                   </Field>
@@ -451,9 +624,10 @@ export function LoginForm({
                       <button
                         type="button"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors cursor-pointer p-1"
+                        aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                       >
-                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4 text-white/70 hover:text-white" /> : <Eye className="w-4 h-4 text-white/70 hover:text-white" />}
                       </button>
                     </div>
                   </Field>
@@ -482,25 +656,10 @@ export function LoginForm({
                 </>
               )}
 
-              {/* Password Field (Sign In & Sign Up Modes) */}
-              {(mode === "signin" || mode === "signup") && (
+              {/* Password Field for Sign In Mode */}
+              {mode === "signin" && (
                 <Field>
-                  <div className="flex items-center justify-between">
-                    <FieldLabel htmlFor="password">Password</FieldLabel>
-                    {mode === "signin" && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMode("forgot");
-                          setErrorMsg(null);
-                          setSuccessMsg(null);
-                        }}
-                        className="text-xs text-teal-400 hover:text-teal-300 font-medium underline-offset-2 hover:underline cursor-pointer"
-                      >
-                        Forgot your password?
-                      </button>
-                    )}
-                  </div>
+                  <FieldLabel htmlFor="password">Password</FieldLabel>
                   <div className="relative">
                     <Input
                       id="password"
@@ -522,6 +681,30 @@ export function LoginForm({
                       ) : (
                         <Eye className="w-4 h-4 text-white/70 hover:text-white" />
                       )}
+                    </button>
+                  </div>
+
+                  {/* Remember Me & Forgot Password Controls */}
+                  <div className="flex items-center justify-between mt-2 pt-0.5">
+                    <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-white/60 hover:text-white/80">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="rounded border-white/20 bg-white/5 text-teal-500 focus:ring-teal-500 cursor-pointer"
+                      />
+                      <span>Remember me</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("forgot");
+                        setErrorMsg(null);
+                        setSuccessMsg(null);
+                      }}
+                      className="text-xs text-teal-400 hover:text-teal-300 font-medium underline-offset-2 hover:underline cursor-pointer"
+                    >
+                      Forgot your password?
                     </button>
                   </div>
                 </Field>
@@ -577,7 +760,7 @@ export function LoginForm({
                   disabled={
                     isSubmitting ||
                     (mode === "verify-otp" && otp.length !== 6) ||
-                    (mode === "new-password" && (!isPasswordValid || !passwordsMatch))
+                    ((mode === "new-password" || mode === "signup") && (!isPasswordValid || !passwordsMatch))
                   }
                   className="w-full mt-1 text-sm font-semibold text-white bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 border border-teal-400/40 shadow-lg shadow-teal-500/25 cursor-pointer"
                 >
@@ -613,7 +796,7 @@ export function LoginForm({
                     <Button
                       variant="outline"
                       type="button"
-                      onClick={initiateGoogleLogin}
+                      onClick={handleGoogleLogin}
                       className="w-full text-sm font-medium text-white bg-white/5 hover:bg-white/10 border border-white/20 hover:border-white/30 transition-all flex items-center justify-center gap-3 py-2.5 cursor-pointer"
                     >
                       <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -727,11 +910,19 @@ export function LoginForm({
 
       <FieldDescription className="px-6 text-center text-[11px] text-white/40">
         By clicking continue, you agree to our{" "}
-        <a href="#" className="underline underline-offset-2 hover:text-white/70">
+        <a
+          href="#terms"
+          onClick={(e) => e.preventDefault()}
+          className="underline underline-offset-2 hover:text-white/70"
+        >
           Terms of Service
         </a>{" "}
         and{" "}
-        <a href="#" className="underline underline-offset-2 hover:text-white/70">
+        <a
+          href="#privacy"
+          onClick={(e) => e.preventDefault()}
+          className="underline underline-offset-2 hover:text-white/70"
+        >
           Privacy Policy
         </a>
         .

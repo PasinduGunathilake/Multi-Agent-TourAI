@@ -91,12 +91,20 @@ export async function registerApi(
   return data;
 }
 
-export async function loginApi(email: string, password: string): Promise<AuthResponse> {
+export async function loginApi(
+  email: string,
+  password: string,
+  rememberMe: boolean = true
+): Promise<AuthResponse> {
   const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+    body: JSON.stringify({
+      email: email.trim().toLowerCase(),
+      password,
+      remember_me: rememberMe,
+    }),
   });
   const data = await parseResponse<AuthResponse>(res);
   setMemoryToken(data.access_token);

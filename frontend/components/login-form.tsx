@@ -37,6 +37,7 @@ export type LoginFormMode =
   | "signup"
   | "setup"
   | "forgot"
+  | "reset-request"
   | "verify-otp"
   | "new-password";
 
@@ -95,6 +96,8 @@ export function LoginForm({
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [emailValidationMsg, setEmailValidationMsg] = useState<string | null>(null);
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTokenExpired, setIsTokenExpired] = useState(false);
 
@@ -103,6 +106,7 @@ export function LoginForm({
     register,
     initiateGoogleLogin,
     completePasswordSetup,
+    checkEmail,
     forgotPassword,
     verifyResetOtp,
     resetPassword,
@@ -148,6 +152,111 @@ export function LoginForm({
   const passwordsMatch = password.length > 0 && password === confirmPassword;
   const isPasswordValid = hasMinLength && hasLetter && hasNumberOrSymbol;
 
+  const validateEmailFormat = (val: string): boolean => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+  };
+
+  // Real-time email validation on blur / tab switch
+  const handleEmailBlur = async () => {
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setEmailValidationMsg(null);
+      return;
+    }
+
+    if (!validateEmailFormat(cleanEmail)) {
+      setEmailValidationMsg("Please enter a valid email address.");
+      return;
+    }
+
+    setIsCheckingEmail(true);
+    try {
+      const res = await checkEmail(cleanEmail);
+      if (mode === "signin") {
+        if (!res.exists) {
+          setEmailValidationMsg(
+            "This email address is not registered. Please check your email or create an account."
+          );
+        } else {
+          setEmailValidationMsg(null);
+        }
+      } else if (mode === "signup") {
+        if (res.exists) {
+          setEmailValidationMsg(
+            "This email address is already registered. Please sign in instead."
+          );
+        } else {
+          setEmailValidationMsg(null);
+        }
+      } else if (mode === "forgot" || mode === "reset-request") {
+        if (!res.exists) {
+          setEmailValidationMsg(
+            "This email address is not registered. Please check your email or create an account."
+          );
+        } else if (res.isOAuth && !res.hasPassword) {
+          setEmailValidationMsg(
+            "This account was registered with Google Sign-In and does not have a password configured."
+          );
+        } else {
+          setEmailValidationMsg(null);
+        }
+      }
+    } catch {
+      // Network issues during blur shouldn't hard-block user typing
+    } finally {
+      setIsCheckingEmail(false);
+    }
+  };
+
+  // Pre-validate email before navigating to Forgot Password screen
+  const handleForgotPasswordClick = async () => {
+    clearOAuthError();
+    setEmailValidationMsg(null);
+    setErrorMsg(null);
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      const emptyMsg = "Please enter your email address to reset your password.";
+      setErrorMsg(emptyMsg);
+      setEmailValidationMsg(emptyMsg);
+      return;
+    }
+
+    if (!validateEmailFormat(cleanEmail)) {
+      const invalidMsg = "Please enter a valid email address.";
+      setErrorMsg(invalidMsg);
+      setEmailValidationMsg(invalidMsg);
+      return;
+    }
+
+    setIsCheckingEmail(true);
+    try {
+      const res = await checkEmail(cleanEmail);
+      if (!res.exists) {
+        const notFoundMsg =
+          "This email address is not registered. Please check your email or create an account.";
+        setErrorMsg(notFoundMsg);
+        setEmailValidationMsg(notFoundMsg);
+        return; // Retain user on login page with red error text
+      }
+      if (res.isOAuth && !res.hasPassword) {
+        const oauthMsg =
+          "This account was registered with Google Sign-In and does not have a password configured. Please sign in with Google.";
+        setErrorMsg(oauthMsg);
+        setEmailValidationMsg(oauthMsg);
+        return;
+      }
+
+      // Valid registered email: navigate to forgot password screen
+      setErrorMsg(null);
+      setEmailValidationMsg(null);
+      setSuccessMsg(null);
+      setMode("forgot");
+    } finally {
+      setIsCheckingEmail(false);
+    }
+  };
+
   // Handle Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,16 +267,26 @@ export function LoginForm({
 
     const cleanEmail = email.trim();
 
-    // 1. Forgot Password (Step 1)
-    if (mode === "forgot") {
+    // 1. Forgot Password / Request OTP
+    if (mode === "forgot" || mode === "reset-request") {
       if (!cleanEmail) {
         setErrorMsg("Please enter your registered email address.");
+        setEmailValidationMsg("Please enter your registered email address.");
         return;
       }
       setIsSubmitting(true);
       try {
-        const { message } = await forgotPassword(cleanEmail);
-        setSuccessMsg(message);
+        const res = await forgotPassword(cleanEmail);
+        if (!res.success) {
+          // If given email not in database: show red colour text for validation!
+          // Stays on this screen so the user clearly sees the red error and can change the email
+          setErrorMsg(res.message);
+          setEmailValidationMsg(res.message);
+          return;
+        }
+        // Only navigate to OTP verification after backend confirms OTP generated & email delivery accepted
+        setEmailValidationMsg(null);
+        setSuccessMsg(res.message);
         setCooldownTarget(RESEND_DELAY);
         setOtp("");
         setMode("verify-otp");
@@ -273,6 +392,11 @@ export function LoginForm({
       return;
     }
 
+    if (emailValidationMsg) {
+      setErrorMsg(emailValidationMsg);
+      return;
+    }
+
     if (mode === "signup") {
       if (!isPasswordValid) {
         setErrorMsg("Password must be at least 8 characters and include both letters and numbers/symbols.");
@@ -305,6 +429,15 @@ export function LoginForm({
           onSuccess?.();
         }
       } else {
+        // Direct duplicate validation before registration
+        const emailCheck = await checkEmail(cleanEmail);
+        if (emailCheck.exists) {
+          const dupMsg = "This email address is already registered. Please sign in instead.";
+          setEmailValidationMsg(dupMsg);
+          setErrorMsg(dupMsg);
+          return;
+        }
+
         const { error } = await register(cleanEmail, password, displayName.trim());
         if (error) {
           setErrorMsg(error);
@@ -329,8 +462,15 @@ export function LoginForm({
       if (success) {
         setCooldownTarget(RESEND_DELAY);
         setOtp("");
-        setSuccessMsg("A new verification code has been sent to your email.");
+        setSuccessMsg(message || "A new verification code has been sent to your email.");
       } else {
+        if (
+          message.toLowerCase().includes("not registered") ||
+          message.toLowerCase().includes("google sign-in") ||
+          message.toLowerCase().includes("not eligible")
+        ) {
+          setMode("signin");
+        }
         setErrorMsg(message);
       }
     } finally {
@@ -372,7 +512,7 @@ export function LoginForm({
                     ? "Welcome back"
                     : mode === "signup"
                     ? "Create an account"
-                    : mode === "forgot"
+                    : mode === "forgot" || mode === "reset-request"
                     ? "Reset your password"
                     : mode === "verify-otp"
                     ? "Enter verification code"
@@ -385,7 +525,7 @@ export function LoginForm({
                     ? "Login to your TourAI account"
                     : mode === "signup"
                     ? "Start isolated, private travel planning sessions"
-                    : mode === "forgot"
+                    : mode === "forgot" || mode === "reset-request"
                     ? "Enter your email to receive a 6-digit verification code"
                     : mode === "verify-otp"
                     ? `We sent a 6-digit code to ${email || "your email"}`
@@ -442,18 +582,41 @@ export function LoginForm({
                 </Field>
               )}
 
-              {/* Email Field (Sign In, Sign Up, & Forgot Password Modes) */}
-              {(mode === "signin" || mode === "signup" || mode === "forgot") && (
+              {/* Email Field (Sign In, Sign Up, Forgot Password & Reset Request Modes) */}
+              {(mode === "signin" || mode === "signup" || mode === "forgot" || mode === "reset-request") && (
                 <Field>
                   <FieldLabel htmlFor="email">Email address</FieldLabel>
                   <Input
                     id="email"
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailValidationMsg) setEmailValidationMsg(null);
+                      if (errorMsg) setErrorMsg(null);
+                    }}
+                    onBlur={handleEmailBlur}
                     placeholder="m@example.com"
                     required
+                    className={
+                      emailValidationMsg ||
+                      (effectiveError && (mode === "forgot" || mode === "reset-request"))
+                        ? "border-rose-500/60 focus-visible:ring-rose-500/30 text-rose-100"
+                        : ""
+                    }
                   />
+                  {isCheckingEmail && (
+                    <p className="text-[11px] text-teal-400 font-medium mt-1.5 flex items-center gap-1.5 animate-pulse">
+                      <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
+                      <span>Checking email registration...</span>
+                    </p>
+                  )}
+                  {!isCheckingEmail && emailValidationMsg && (
+                    <p className="text-[11px] text-rose-400 font-medium mt-1.5 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{emailValidationMsg}</span>
+                    </p>
+                  )}
                 </Field>
               )}
 
@@ -697,14 +860,11 @@ export function LoginForm({
                     </label>
                     <button
                       type="button"
-                      onClick={() => {
-                        setMode("forgot");
-                        setErrorMsg(null);
-                        setSuccessMsg(null);
-                      }}
-                      className="text-xs text-teal-400 hover:text-teal-300 font-medium underline-offset-2 hover:underline cursor-pointer"
+                      onClick={handleForgotPasswordClick}
+                      disabled={isCheckingEmail}
+                      className="text-xs text-teal-400 hover:text-teal-300 font-medium underline-offset-2 hover:underline cursor-pointer disabled:opacity-50"
                     >
-                      Forgot your password?
+                      {isCheckingEmail ? "Checking..." : "Forgot your password?"}
                     </button>
                   </div>
                 </Field>
@@ -773,7 +933,7 @@ export function LoginForm({
                     "Login"
                   ) : mode === "signup" ? (
                     "Create Account"
-                  ) : mode === "forgot" ? (
+                  ) : mode === "forgot" || mode === "reset-request" ? (
                     "Send Verification Code"
                   ) : mode === "verify-otp" ? (
                     "Verify Code"
@@ -832,6 +992,7 @@ export function LoginForm({
                       type="button"
                       onClick={() => {
                         setMode("signup");
+                        setEmailValidationMsg(null);
                         setErrorMsg(null);
                         setSuccessMsg(null);
                       }}
@@ -847,6 +1008,7 @@ export function LoginForm({
                       type="button"
                       onClick={() => {
                         setMode("signin");
+                        setEmailValidationMsg(null);
                         setErrorMsg(null);
                         setSuccessMsg(null);
                       }}
@@ -860,6 +1022,7 @@ export function LoginForm({
                     type="button"
                     onClick={() => {
                       setMode("forgot");
+                      setEmailValidationMsg(null);
                       setErrorMsg(null);
                       setSuccessMsg(null);
                     }}
@@ -873,6 +1036,7 @@ export function LoginForm({
                     type="button"
                     onClick={() => {
                       setMode("signin");
+                      setEmailValidationMsg(null);
                       setErrorMsg(null);
                       setSuccessMsg(null);
                     }}

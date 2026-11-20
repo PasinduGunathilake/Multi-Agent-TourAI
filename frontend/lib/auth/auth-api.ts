@@ -1,4 +1,9 @@
-import { AuthResponse, User } from "./auth-types";
+import {
+  AuthResponse,
+  User,
+  GenericMessageResponse,
+  VerifyOtpResponse,
+} from "./auth-types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -121,6 +126,61 @@ export async function completePasswordSetupApi(
   const data = await parseResponse<AuthResponse>(res);
   setMemoryToken(data.access_token);
   return data;
+}
+
+export async function forgotPasswordApi(
+  email: string
+): Promise<GenericMessageResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email: email.trim().toLowerCase() }),
+  });
+  return parseResponse<GenericMessageResponse>(res);
+}
+
+export async function verifyResetOtpApi(
+  email: string,
+  otp: string
+): Promise<VerifyOtpResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/verify-reset-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email: email.trim().toLowerCase(), otp: otp.trim() }),
+  });
+  return parseResponse<VerifyOtpResponse>(res);
+}
+
+export async function resetPasswordApi(
+  resetToken: string,
+  newPassword: string,
+  confirmPassword?: string
+): Promise<GenericMessageResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      reset_token: resetToken.trim(),
+      new_password: newPassword,
+      confirm_password: confirmPassword || undefined,
+    }),
+  });
+  return parseResponse<GenericMessageResponse>(res);
+}
+
+export async function resendResetOtpApi(
+  email: string
+): Promise<GenericMessageResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/resend-reset-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email: email.trim().toLowerCase() }),
+  });
+  return parseResponse<GenericMessageResponse>(res);
 }
 
 export async function getGoogleAuthUrlApi(): Promise<{ auth_url: string; state: string }> {

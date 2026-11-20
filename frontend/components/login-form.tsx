@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,39 @@ import {
   FieldSeparator,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { AlertCircle, CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSeparator,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  Eye,
+  EyeOff,
+  Check,
+  X,
+  ArrowLeft,
+  KeyRound,
+  ShieldCheck,
+} from "lucide-react";
+
+export type LoginFormMode =
+  | "signin"
+  | "signup"
+  | "setup"
+  | "forgot"
+  | "verify-otp"
+  | "new-password";
 
 export interface LoginFormProps extends React.ComponentProps<"div"> {
   onSuccess?: () => void;
-  initialMode?: "signin" | "signup" | "setup";
+  initialMode?: LoginFormMode;
 }
+
+const RESEND_DELAY = 60;
 
 export function LoginForm({
   className,
@@ -26,11 +53,21 @@ export function LoginForm({
   initialMode = "signin",
   ...props
 }: LoginFormProps) {
-  const [mode, setMode] = useState<"signin" | "signup" | "setup">(initialMode);
+  const [mode, setMode] = useState<LoginFormMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [setupToken, setSetupToken] = useState("");
+  const [otp, setOtp] = useState("");
+  const [resetToken, setResetToken] = useState("");
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const [countdown, setCountdown] = useState(RESEND_DELAY);
+  const canResend = countdown === 0;
+
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -39,10 +76,32 @@ export function LoginForm({
     login,
     register,
     initiateGoogleLogin,
-    requestPasswordSetup,
     completePasswordSetup,
+    forgotPassword,
+    verifyResetOtp,
+    resetPassword,
+    resendResetOtp,
   } = useAuth();
 
+  // Resend cooldown timer for OTP verification step
+  useEffect(() => {
+    if (mode !== "verify-otp" || countdown === 0) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [mode, countdown]);
+
+  // Real-time password criteria
+  const hasMinLength = password.length >= 8;
+  const hasLetter = /[A-Za-z]/.test(password);
+  const hasNumberOrSymbol = /[\d\W]/.test(password);
+  const passwordsMatch = password.length > 0 && password === confirmPassword;
+  const isPasswordValid = hasMinLength && hasLetter && hasNumberOrSymbol;
+
+  // Handle Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -50,13 +109,95 @@ export function LoginForm({
 
     const cleanEmail = email.trim();
 
+    // 1. Forgot Password (Step 1)
+    if (mode === "forgot") {
+      if (!cleanEmail) {
+        setErrorMsg("Please enter your registered email address.");
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const { message } = await forgotPassword(cleanEmail);
+        setSuccessMsg(message);
+        setCountdown(RESEND_DELAY);
+        setOtp("");
+        setMode("verify-otp");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // 2. Verify OTP (Step 2)
+    if (mode === "verify-otp") {
+      if (otp.length !== 6) {
+        setErrorMsg("Please enter the complete 6-digit verification code.");
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const { success, resetToken: token, message } = await verifyResetOtp(cleanEmail, otp);
+        if (success && token) {
+          setResetToken(token);
+          setPassword("");
+          setConfirmPassword("");
+          setSuccessMsg("Code verified! Please create your new password.");
+          setMode("new-password");
+        } else {
+          setErrorMsg(message);
+        }
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // 3. New Password (Step 3)
+    if (mode === "new-password") {
+      if (!password) {
+        setErrorMsg("Please enter a new password.");
+        return;
+      }
+      if (!isPasswordValid) {
+        setErrorMsg("Password must be at least 8 characters and include both letters and numbers/symbols.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setErrorMsg("Passwords do not match.");
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const { success, message } = await resetPassword(resetToken, password, confirmPassword);
+        if (success) {
+          setSuccessMsg(
+            "Your password has been reset successfully. Please log in using your new password."
+          );
+          setPassword("");
+          setConfirmPassword("");
+          setResetToken("");
+          setOtp("");
+          setTimeout(() => {
+            setMode("signin");
+            setSuccessMsg("Your password has been reset. Please enter your new password to log in.");
+          }, 1800);
+        } else {
+          setErrorMsg(message);
+        }
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // 4. Initial Password Setup (Legacy/Invite Token)
     if (mode === "setup") {
       if (!setupToken.trim() || !password) {
         setErrorMsg("Please provide your setup token and a new password.");
         return;
       }
-      if (password.length < 8) {
-        setErrorMsg("Password must be at least 8 characters with letters and numbers.");
+      if (!isPasswordValid) {
+        setErrorMsg("Password must be at least 8 characters with letters and numbers/symbols.");
         return;
       }
       setIsSubmitting(true);
@@ -74,6 +215,7 @@ export function LoginForm({
       return;
     }
 
+    // 5. Sign In / Sign Up
     if (!cleanEmail || !password) {
       setErrorMsg("Please enter both email and password.");
       return;
@@ -113,21 +255,18 @@ export function LoginForm({
     }
   };
 
-  const handleRequestSetupLink = async () => {
-    const cleanEmail = email.trim();
-    if (!cleanEmail) {
-      setErrorMsg("Please enter your email address to request a setup token.");
-      return;
-    }
-    setIsSubmitting(true);
+  // Handle Resend OTP in verify-otp screen
+  const handleResendOtp = async () => {
+    if (!canResend || isSubmitting) return;
     setErrorMsg(null);
+    setSuccessMsg(null);
+    setIsSubmitting(true);
     try {
-      const { success, message } = await requestPasswordSetup(cleanEmail);
+      const { success, message } = await resendResetOtp(email.trim());
       if (success) {
-        setSuccessMsg(
-          message || "Verification token generated. Please enter your setup token and new password."
-        );
-        setMode("setup");
+        setCountdown(RESEND_DELAY);
+        setOtp("");
+        setSuccessMsg("A new verification code has been sent to your email.");
       } else {
         setErrorMsg(message);
       }
@@ -142,13 +281,30 @@ export function LoginForm({
         <CardContent className="grid p-0 md:grid-cols-2">
           <form onSubmit={handleSubmit} className="p-6 md:p-8 flex flex-col justify-center">
             <FieldGroup>
+              {/* Header */}
               <div className="flex flex-col items-center gap-2 text-center">
-                
+                {mode === "verify-otp" && (
+                  <div className="w-10 h-10 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 mb-1">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                )}
+                {mode === "new-password" && (
+                  <div className="w-10 h-10 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 mb-1">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                )}
+
                 <h1 className="text-2xl font-bold tracking-tight text-white">
                   {mode === "signin"
                     ? "Welcome back"
                     : mode === "signup"
                     ? "Create an account"
+                    : mode === "forgot"
+                    ? "Reset your password"
+                    : mode === "verify-otp"
+                    ? "Enter verification code"
+                    : mode === "new-password"
+                    ? "Create new password"
                     : "Password Setup"}
                 </h1>
                 <p className="text-balance text-xs text-white/50">
@@ -156,6 +312,12 @@ export function LoginForm({
                     ? "Login to your TourAI account"
                     : mode === "signup"
                     ? "Start isolated, private travel planning sessions"
+                    : mode === "forgot"
+                    ? "Enter your email to receive a 6-digit verification code"
+                    : mode === "verify-otp"
+                    ? `We sent a 6-digit code to ${email || "your email"}`
+                    : mode === "new-password"
+                    ? "Create a strong password for your account"
                     : "Verify token and create a secure password"}
                 </p>
               </div>
@@ -189,10 +351,10 @@ export function LoginForm({
                 </Field>
               )}
 
-              {/* Email Field (Sign In & Sign Up Modes) */}
-              {mode !== "setup" && (
+              {/* Email Field (Sign In, Sign Up, & Forgot Password Modes) */}
+              {(mode === "signin" || mode === "signup" || mode === "forgot") && (
                 <Field>
-                  <FieldLabel htmlFor="email">Email</FieldLabel>
+                  <FieldLabel htmlFor="email">Email address</FieldLabel>
                   <Input
                     id="email"
                     type="email"
@@ -204,67 +366,244 @@ export function LoginForm({
                 </Field>
               )}
 
-              {/* Setup Token Field (Setup Mode) */}
-              {mode === "setup" && (
+              {/* Step 2: OTP Verification Screen */}
+              {mode === "verify-otp" && (
+                <div className="flex flex-col gap-4 py-2">
+                  <div className="flex justify-center">
+                    <InputOTP
+                      aria-label="Verification code"
+                      maxLength={6}
+                      onChange={(val) => setOtp(val)}
+                      value={otp}
+                      disabled={isSubmitting}
+                    >
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} />
+                        <InputOTPSlot index={1} />
+                        <InputOTPSlot index={2} />
+                      </InputOTPGroup>
+                      <InputOTPSeparator />
+                      <InputOTPGroup>
+                        <InputOTPSlot index={3} />
+                        <InputOTPSlot index={4} />
+                        <InputOTPSlot index={5} />
+                      </InputOTPGroup>
+                    </InputOTP>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4 text-xs pt-1 px-1">
+                    <span className="text-white/40">
+                      {canResend
+                        ? "Didn't receive the code?"
+                        : `Resend code in ${countdown}s`}
+                    </span>
+                    <Button
+                      className="h-auto p-0 text-teal-400 hover:text-teal-300 font-semibold"
+                      disabled={!canResend || isSubmitting}
+                      onClick={handleResendOtp}
+                      size="sm"
+                      type="button"
+                      variant="link"
+                    >
+                      Resend Code
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: New Password Screen */}
+              {mode === "new-password" && (
+                <>
+                  <Field>
+                    <FieldLabel htmlFor="new-password">New Password</FieldLabel>
+                    <div className="relative">
+                      <Input
+                        id="new-password"
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••••••"
+                        required
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="confirm-password">Confirm New Password</FieldLabel>
+                    <div className="relative">
+                      <Input
+                        id="confirm-password"
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="••••••••••••"
+                        required
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </Field>
+
+                  {/* Password Criteria Feedback */}
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5 text-[11px]">
+                    <div className={cn("flex items-center gap-1.5", hasMinLength ? "text-teal-400" : "text-white/40")}>
+                      {hasMinLength ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                      <span>At least 8 characters</span>
+                    </div>
+                    <div className={cn("flex items-center gap-1.5", hasLetter ? "text-teal-400" : "text-white/40")}>
+                      {hasLetter ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                      <span>Contains at least one letter</span>
+                    </div>
+                    <div className={cn("flex items-center gap-1.5", hasNumberOrSymbol ? "text-teal-400" : "text-white/40")}>
+                      {hasNumberOrSymbol ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                      <span>Contains a number or special character</span>
+                    </div>
+                    {confirmPassword.length > 0 && (
+                      <div className={cn("flex items-center gap-1.5", passwordsMatch ? "text-teal-400" : "text-rose-400")}>
+                        {passwordsMatch ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                        <span>{passwordsMatch ? "Passwords match" : "Passwords do not match"}</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Password Field (Sign In & Sign Up Modes) */}
+              {(mode === "signin" || mode === "signup") && (
                 <Field>
-                  <FieldLabel htmlFor="setup-token">Setup / Verification Token</FieldLabel>
-                  <Input
-                    id="setup-token"
-                    type="text"
-                    value={setupToken}
-                    onChange={(e) => setSetupToken(e.target.value)}
-                    placeholder="Paste your setup token"
-                    required
-                  />
+                  <div className="flex items-center justify-between">
+                    <FieldLabel htmlFor="password">Password</FieldLabel>
+                    {mode === "signin" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode("forgot");
+                          setErrorMsg(null);
+                          setSuccessMsg(null);
+                        }}
+                        className="text-xs text-teal-400 hover:text-teal-300 font-medium underline-offset-2 hover:underline cursor-pointer"
+                      >
+                        Forgot your password?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••••••"
+                      required
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors cursor-pointer p-1"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4 text-white/70 hover:text-white" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-white/70 hover:text-white" />
+                      )}
+                    </button>
+                  </div>
                 </Field>
               )}
 
-              {/* Password Field */}
-              <Field>
-                <div className="flex items-center">
-                  <FieldLabel htmlFor="password">
-                    {mode === "setup" ? "New Password" : "Password"}
-                  </FieldLabel>
-                  {mode === "signin" && (
-                    <button
-                      type="button"
-                      onClick={handleRequestSetupLink}
-                      className="ml-auto text-xs text-teal-400 underline-offset-2 hover:underline cursor-pointer"
-                    >
-                      Forgot your password?
-                    </button>
-                  )}
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  required
-                />
-              </Field>
+              {/* Setup Token Field (Legacy Setup Mode) */}
+              {mode === "setup" && (
+                <>
+                  <Field>
+                    <FieldLabel htmlFor="setup-token">Setup / Verification Token</FieldLabel>
+                    <Input
+                      id="setup-token"
+                      type="text"
+                      value={setupToken}
+                      onChange={(e) => setSetupToken(e.target.value)}
+                      placeholder="Paste your setup token"
+                      required
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="password">New Password</FieldLabel>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••••••"
+                        required
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors cursor-pointer p-1"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4 text-white/70 hover:text-white" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-white/70 hover:text-white" />
+                        )}
+                      </button>
+                    </div>
+                  </Field>
+                </>
+              )}
 
-              {/* Submit Button */}
+              {/* Primary Action Button */}
               <Field>
-                <Button type="submit" disabled={isSubmitting} className="w-full">
+                <Button
+                  type="submit"
+                  disabled={
+                    isSubmitting ||
+                    (mode === "verify-otp" && otp.length !== 6) ||
+                    (mode === "new-password" && (!isPasswordValid || !passwordsMatch))
+                  }
+                  className="w-full mt-1 text-sm font-semibold text-white bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 border border-teal-400/40 shadow-lg shadow-teal-500/25 cursor-pointer"
+                >
                   {isSubmitting ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
                       <span>Processing...</span>
                     </>
                   ) : mode === "signin" ? (
                     "Login"
                   ) : mode === "signup" ? (
                     "Create Account"
+                  ) : mode === "forgot" ? (
+                    "Send Verification Code"
+                  ) : mode === "verify-otp" ? (
+                    "Verify Code"
+                  ) : mode === "new-password" ? (
+                    "Reset Password"
                   ) : (
                     "Save Password"
                   )}
                 </Button>
               </Field>
 
-              {/* Social Login Separator & Google OAuth */}
-              {mode !== "setup" && (
+              {/* Social Login Separator & Google OAuth (Only on Sign In / Sign Up) */}
+              {(mode === "signin" || mode === "signup") && (
                 <>
                   <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card">
                     Or continue with
@@ -275,9 +614,9 @@ export function LoginForm({
                       variant="outline"
                       type="button"
                       onClick={initiateGoogleLogin}
-                      className="w-full flex items-center justify-center gap-3 py-2.5"
+                      className="w-full text-sm font-medium text-white bg-white/5 hover:bg-white/10 border border-white/20 hover:border-white/30 transition-all flex items-center justify-center gap-3 py-2.5 cursor-pointer"
                     >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                         <path
                           fill="#4285F4"
                           d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.27-2.09 3.665-5.17 3.665-9.12z"
@@ -295,13 +634,13 @@ export function LoginForm({
                           d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.64 1.26 6.57l4.02 3.14c.95-2.83 3.6-4.96 6.72-4.96z"
                         />
                       </svg>
-                      <span>Login with Google</span>
+                      <span className="text-white font-medium">Login with Google</span>
                     </Button>
                   </Field>
                 </>
               )}
 
-              {/* Mode Toggles */}
+              {/* Mode Toggles & Back Navigation */}
               <FieldDescription className="text-center pt-2">
                 {mode === "signin" ? (
                   <>
@@ -333,6 +672,19 @@ export function LoginForm({
                       Sign in
                     </button>
                   </>
+                ) : mode === "verify-otp" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("forgot");
+                      setErrorMsg(null);
+                      setSuccessMsg(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs text-white/50 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Change email address</span>
+                  </button>
                 ) : (
                   <button
                     type="button"
@@ -341,9 +693,10 @@ export function LoginForm({
                       setErrorMsg(null);
                       setSuccessMsg(null);
                     }}
-                    className="text-teal-400 font-semibold underline-offset-2 hover:underline cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs text-teal-400 font-semibold underline-offset-2 hover:underline cursor-pointer"
                   >
-                    Back to Login
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to Login</span>
                   </button>
                 )}
               </FieldDescription>
@@ -386,4 +739,3 @@ export function LoginForm({
     </div>
   );
 }
-

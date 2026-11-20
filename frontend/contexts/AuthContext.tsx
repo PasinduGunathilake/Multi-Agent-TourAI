@@ -17,6 +17,10 @@ import {
   getGoogleAuthUrlApi,
   requestPasswordSetupApi,
   completePasswordSetupApi,
+  forgotPasswordApi,
+  verifyResetOtpApi,
+  resetPasswordApi,
+  resendResetOtpApi,
   getMemoryToken,
   setMemoryToken,
   subscribeToken,
@@ -181,6 +185,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const forgotPassword = async (
+    email: string
+  ): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await forgotPasswordApi(email);
+      return { success: true, message: res.message };
+    } catch (err: unknown) {
+      const msg = err instanceof AuthApiError ? err.message : "Failed to request password reset code.";
+      return { success: false, message: msg };
+    }
+  };
+
+  const verifyResetOtp = async (
+    email: string,
+    otp: string
+  ): Promise<{ success: boolean; resetToken?: string; message: string }> => {
+    try {
+      const res = await verifyResetOtpApi(email, otp);
+      return { success: true, resetToken: res.reset_token, message: res.message };
+    } catch (err: unknown) {
+      const msg = err instanceof AuthApiError ? err.message : "Invalid or expired verification code.";
+      return { success: false, message: msg };
+    }
+  };
+
+  const resetPassword = async (
+    resetToken: string,
+    newPassword: string,
+    confirmPassword?: string
+  ): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await resetPasswordApi(resetToken, newPassword, confirmPassword);
+      return { success: true, message: res.message };
+    } catch (err: unknown) {
+      const msg = err instanceof AuthApiError ? err.message : "Failed to reset password.";
+      return { success: false, message: msg };
+    }
+  };
+
+  const resendResetOtp = async (
+    email: string
+  ): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await resendResetOtpApi(email);
+      return { success: true, message: res.message };
+    } catch (err: unknown) {
+      const msg = err instanceof AuthApiError ? err.message : "Failed to resend verification code.";
+      return { success: false, message: msg };
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -194,6 +249,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         initiateGoogleLogin,
         requestPasswordSetup,
         completePasswordSetup,
+        forgotPassword,
+        verifyResetOtp,
+        resetPassword,
+        resendResetOtp,
       }}
     >
       {children}

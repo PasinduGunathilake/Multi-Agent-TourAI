@@ -72,7 +72,7 @@ export function DropdownMenu({
 
 export interface DropdownMenuTriggerProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  render?: React.ReactElement<any>;
+  render?: React.ReactElement;
   asChild?: boolean;
 }
 
@@ -84,8 +84,11 @@ export const DropdownMenuTrigger = React.forwardRef<
 
   const handleRef = (node: HTMLButtonElement | null) => {
     triggerRef.current = node;
-    if (typeof ref === "function") ref(node);
-    else if (ref) (ref as any).current = node;
+    if (typeof ref === "function") {
+      ref(node);
+    } else if (ref && "current" in ref) {
+      ref.current = node;
+    }
   };
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -94,9 +97,13 @@ export const DropdownMenuTrigger = React.forwardRef<
   };
 
   if (render && React.isValidElement(render)) {
-    const renderElem = render as React.ReactElement<any>;
+    const renderElem = render as React.ReactElement<{
+      onClick?: React.MouseEventHandler<HTMLButtonElement>;
+      children?: React.ReactNode;
+      "aria-expanded"?: boolean;
+      "data-state"?: string;
+    }>;
     return React.cloneElement(renderElem, {
-      ref: handleRef,
       onClick: (e: React.MouseEvent<HTMLButtonElement>) => {
         renderElem.props?.onClick?.(e);
         handleClick(e);
@@ -104,20 +111,23 @@ export const DropdownMenuTrigger = React.forwardRef<
       "aria-expanded": open,
       "data-state": open ? "open" : "closed",
       children: renderElem.props?.children || children,
-    } as any);
+    });
   }
 
   if (asChild && React.isValidElement(children)) {
-    const childElem = children as React.ReactElement<any>;
+    const childElem = children as React.ReactElement<{
+      onClick?: React.MouseEventHandler<HTMLButtonElement>;
+      "aria-expanded"?: boolean;
+      "data-state"?: string;
+    }>;
     return React.cloneElement(childElem, {
-      ref: handleRef,
       onClick: (e: React.MouseEvent<HTMLButtonElement>) => {
         childElem.props?.onClick?.(e);
         handleClick(e);
       },
       "aria-expanded": open,
       "data-state": open ? "open" : "closed",
-    } as any);
+    });
   }
 
   return (

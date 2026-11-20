@@ -11,12 +11,16 @@ logger = get_logger("Multi_Agent_TourAI.auth.email_service")
 
 def get_smtp_config():
     """Retrieves SMTP configuration from environment variables."""
+    # Sanitize password: strip whitespace and internal spaces (e.g. Gmail 16-char app password format 'xxxx xxxx xxxx xxxx')
+    raw_password = os.getenv("SMTP_PASSWORD", "").strip()
+    clean_password = raw_password.replace(" ", "")
+
     return {
-        "host": os.getenv("SMTP_HOST", "").strip(),
+        "host": os.getenv("SMTP_HOST", "smtp.gmail.com" if "gmail.com" in os.getenv("SMTP_USER", "") else "").strip(),
         "port": int(os.getenv("SMTP_PORT", "587")),
         "user": os.getenv("SMTP_USER", "").strip(),
-        "password": os.getenv("SMTP_PASSWORD", "").strip(),
-        "from_email": os.getenv("SMTP_FROM_EMAIL", "noreply@tourai.com").strip(),
+        "password": clean_password,
+        "from_email": os.getenv("SMTP_FROM_EMAIL", os.getenv("SMTP_USER", "noreply@tourai.com")).strip(),
         "from_name": os.getenv("SMTP_FROM_NAME", "Multi-Agent-TourAI").strip(),
         "use_tls": os.getenv("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes"),
     }

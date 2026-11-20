@@ -17,6 +17,8 @@ export default function CheckpointMarker({
   onRestore,
   canRestore = true,
 }: CheckpointMarkerProps) {
+  const displayLabel = turnIndex !== undefined ? `Checkpoint #${turnIndex + 1} Saved` : label;
+
   return (
     <Marker variant="separator">
       <MarkerContent>
@@ -24,7 +26,7 @@ export default function CheckpointMarker({
           <Bookmark className="w-3 h-3 text-teal-400" />
         </MarkerIcon>
         <span className="text-white/60 font-sans text-[10px]">
-          {label}
+          {displayLabel}
         </span>
         {canRestore && onRestore && (
           <button

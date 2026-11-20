@@ -29,7 +29,13 @@ def get_smtp_config():
 def is_smtp_configured() -> bool:
     """Returns True if minimum required SMTP credentials are provided."""
     config = get_smtp_config()
-    return bool(config["host"] and config["port"])
+    if not (config["host"] and config["port"]):
+        return False
+    # If host is localhost/127.0.0.1, open relay testing without auth is allowed
+    if config["host"] in ("localhost", "127.0.0.1"):
+        return True
+    # For remote/production relays (Gmail, SendGrid, Mailgun, etc.), auth is mandatory
+    return bool(config["user"] and config["password"])
 
 
 def build_password_reset_email_html(otp: str) -> str:
@@ -189,8 +195,65 @@ def send_password_reset_email(to_email: str, otp: str) -> bool:
         return False
 
 
+def send_oauth_account_notice_email(to_email: str) -> bool:
+    """
+    Sends an informational notification to users who requested a password reset but
+    registered via Google OAuth (without an independent password).
+    Preserves backend rate-limiting and generic public HTTP responses.
+    """
+    to_email_clean = to_email.strip().lower()
+    config = get_smtp_config()
+
+    if not is_smtp_configured():
+        logger.info(
+            f"[EMAIL SIMULATION] Informational OAuth sign-in notice for {to_email_clean}: "
+            f"Account is linked with Google OAuth. Please sign in via Google."
+        )
+        return True
+
+    text_body = (
+        f"Hello,\n\n"
+        f"We received a request to reset the password for your TourAI account ({to_email_clean}).\n\n"
+        f"Your account was created using Google Sign-In, so you do not have a password configured. "
+        f"To access your account, please sign in directly with Google:\n\n"
+        f"If you did not request this, you can safely ignore this email.\n\n"
+        f"— The TourAI Team"
+    )
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "TourAI – Account Sign-In Information"
+        msg["From"] = f"{config['from_name']} <{config['from_email']}>"
+        msg["To"] = to_email_clean
+
+        part_text = MIMEText(text_body, "plain", "utf-8")
+        msg.attach(part_text)
+
+        if config["port"] == 465:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(config["host"], config["port"], context=context, timeout=10.0) as server:
+                if config["user"] and config["password"]:
+                    server.login(config["user"], config["password"])
+                server.sendmail(config["from_email"], [to_email_clean], msg.as_string())
+        else:
+            with smtplib.SMTP(config["host"], config["port"], timeout=10.0) as server:
+                if config["use_tls"]:
+                    context = ssl.create_default_context()
+                    server.starttls(context=context)
+                if config["user"] and config["password"]:
+                    server.login(config["user"], config["password"])
+                server.sendmail(config["from_email"], [to_email_clean], msg.as_string())
+
+        logger.info(f"[EMAIL] OAuth notice successfully sent to {to_email_clean}")
+        return True
+    except Exception as e:
+        logger.error(f"[EMAIL] Error sending OAuth notice to {to_email_clean}: {e}")
+        return False
+
+
 __all__ = [
     "send_password_reset_email",
+    "send_oauth_account_notice_email",
     "is_smtp_configured",
     "get_smtp_config",
     "build_password_reset_email_html",

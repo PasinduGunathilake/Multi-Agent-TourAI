@@ -47,6 +47,7 @@ class LoginRequest(BaseModel):
     """
     email: EmailStr
     password: str = Field(..., max_length=128)
+    remember_me: Optional[bool] = Field(default=True)
 
 
 class RequestPasswordSetupRequest(BaseModel):

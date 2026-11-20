@@ -63,6 +63,7 @@ from Multi_Agent_TourAI.auth import (
     OTP_EXPIRATION_MINUTES,
     RESEND_COOLDOWN_SECONDS,
     send_password_reset_email,
+    send_oauth_account_notice_email,
 )
 from Multi_Agent_TourAI.auth.rate_limiter import get_rate_limiter
 from Multi_Agent_TourAI.auth.auth_repository import (
@@ -286,7 +287,7 @@ async def auth_login(payload: LoginRequest, response: Response):
 
     user_id = user_row["id"]
     session_id, raw_refresh_token = create_session(user_id)
-    set_refresh_cookie(response, raw_refresh_token)
+    set_refresh_cookie(response, raw_refresh_token, remember_me=payload.remember_me if payload.remember_me is not None else True)
     access_token = create_access_token(user_id, user_row["email"], session_id=session_id)
 
     return AuthResponse(
@@ -358,7 +359,11 @@ async def auth_forgot_password(payload: ForgotPasswordRequest, request: Request)
     # Safe handling of OAuth-only accounts: Do not generate/overwrite local passwords for Google OAuth users
     email_identity = get_email_identity(email)
     if not email_identity or not email_identity.get("password_hash"):
-        logger.info(f"[AUTH] Forgot password requested for OAuth-only account: {email}. Suppressing OTP generation.")
+        logger.info(f"[AUTH] Forgot password requested for OAuth-only account: {email}. Sending notice email.")
+        try:
+            send_oauth_account_notice_email(email)
+        except Exception as e:
+            logger.warning(f"[AUTH] Failed to send oauth notice email: {e}")
         return GenericMessageResponse(message=generic_msg)
 
     user_id = user_row["id"]
@@ -474,6 +479,10 @@ async def auth_resend_reset_otp(payload: ResendResetOtpRequest, request: Request
     email_identity = get_email_identity(email)
     if not email_identity or not email_identity.get("password_hash"):
         logger.info(f"[AUTH] Resend OTP requested for OAuth-only account: {email}. Suppressing.")
+        try:
+            send_oauth_account_notice_email(email)
+        except Exception as e:
+            logger.warning(f"[AUTH] Failed to send oauth notice email: {e}")
         return GenericMessageResponse(message=generic_msg)
 
     user_id = user_row["id"]

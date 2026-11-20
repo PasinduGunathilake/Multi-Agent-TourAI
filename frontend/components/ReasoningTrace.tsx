@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   ChainOfThought,
   ChainOfThoughtHeader,
@@ -40,15 +40,13 @@ export default function ReasoningTrace({
 }: ReasoningTraceProps) {
   // Open while running so traveler sees live agent thought trail.
   // Collapses when finished, but expands if user clicks it.
+  const [prevRunning, setPrevRunning] = useState(running);
   const [open, setOpen] = useState<boolean>(defaultOpen ?? running);
 
-  useEffect(() => {
-    if (running) {
-      setOpen(true);
-    } else {
-      setOpen(false);
-    }
-  }, [running]);
+  if (running !== prevRunning) {
+    setPrevRunning(running);
+    setOpen(running);
+  }
 
   const durationSec = elapsedMs > 0 ? (elapsedMs / 1000).toFixed(1) : "0.0";
   const stepCount = intent === "follow_up" ? 4 : intent === "specific_query" ? 5 : 9;

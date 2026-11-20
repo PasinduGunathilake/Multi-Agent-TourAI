@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, ArrowUp, Sparkles, Plane, Hotel, Map, CloudSun, Compass } from "lucide-react";
+import { Plus, Sparkles, Plane, Hotel, Map, CloudSun, Compass, ShieldCheck } from "lucide-react";
 import { GlowingEffect } from "@/components/ui/glowing-effect";
 
 interface ChatInputProps {
@@ -17,6 +17,7 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [selectedMode, setSelectedMode] = useState("all");
+  const [showSwarmInfo, setShowSwarmInfo] = useState(false);
 
   const modes = [
     { id: "all", label: "Fan-Out Swarm (6 Agents)", icon: <Sparkles className="w-3.5 h-3.5" /> },
@@ -30,8 +31,9 @@ export default function ChatInput({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoading) return;
-    const query = input.trim() || "5 Days in Tokyo & Kyoto";
-    onSend(query, selectedMode);
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    onSend(trimmed, selectedMode);
     setInput("");
   };
 
@@ -43,7 +45,23 @@ export default function ChatInput({
   };
 
   return (
-    <div className={`w-full transition-all duration-300 ${isDockedBottom ? "max-w-3xl mx-auto" : "max-w-2xl mx-auto"}`}>
+    <div className={`w-full transition-all duration-300 relative ${isDockedBottom ? "max-w-3xl mx-auto" : "max-w-2xl mx-auto"}`}>
+      {/* Active Swarm Info Popover Badge */}
+      {showSwarmInfo && (
+        <div className="absolute -top-12 left-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#090d16] border border-teal-500/30 text-teal-300 text-[11px] shadow-xl animate-in fade-in duration-150">
+          <ShieldCheck className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+          <span>AviationStack + Tavily + OpenWeather + Geoapify Active</span>
+          <button
+            type="button"
+            onClick={() => setShowSwarmInfo(false)}
+            className="ml-1 text-white/40 hover:text-white cursor-pointer"
+            aria-label="Dismiss swarm info"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Outer Pill Container with Glowing Effect */}
       <div className="relative rounded-full p-[1px] shadow-2xl">
         <GlowingEffect
@@ -65,9 +83,10 @@ export default function ChatInput({
           {/* Plus / Add context icon */}
           <button
             type="button"
-            onClick={() => alert("Multi-Agent Settings: AviationStack (Flights) + Tavily (Hotels) + OpenWeather (Weather) + Geoapify (Maps) Active")}
+            onClick={() => setShowSwarmInfo((prev) => !prev)}
             className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
             title="Swarm Context"
+            aria-label="Toggle swarm context info"
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -90,13 +109,14 @@ export default function ChatInput({
           {/* Submit / Create Button */}
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || !input.trim()}
             className={`h-9 px-4.5 rounded-full flex items-center justify-center gap-1.5 text-xs font-bold transition-all duration-200 shrink-0 ${
-              input.trim()
+              input.trim() && !isLoading
                 ? "bg-gradient-to-r from-teal-500 via-sky-600 to-indigo-600 text-white shadow-lg shadow-teal-500/30 hover:scale-105 active:scale-95 cursor-pointer border border-teal-400/30"
-                : "bg-gradient-to-r from-teal-600 to-sky-600 hover:from-teal-500 hover:to-sky-500 text-white active:scale-95 shadow-md shadow-teal-900/40 border border-teal-400/30 cursor-pointer"
+                : "bg-white/10 text-white/35 border border-white/10 cursor-not-allowed"
             }`}
-            title="Create Trip"
+            title={isDockedBottom ? "Send message" : "Create Trip"}
+            aria-label={isDockedBottom ? "Send message" : "Create Trip"}
           >
             {isLoading ? (
               <>

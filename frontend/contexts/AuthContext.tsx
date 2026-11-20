@@ -33,12 +33,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(() => getMemoryToken());
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+
+  const clearOAuthError = useCallback(() => {
+    setOauthError(null);
+  }, []);
+
+  // Broadcast non-sensitive auth state events across tabs (zero tokens transmitted)
+  const broadcastAuthEvent = useCallback((type: "LOGIN" | "LOGOUT") => {
+    try {
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        const channel = new BroadcastChannel("tourai_auth_sync");
+        channel.postMessage({ type });
+        channel.close();
+      }
+    } catch {
+      // BroadcastChannel optional/restricted in sandboxed contexts
+    }
+  }, []);
 
   // Synchronize state whenever memory token is updated externally
   useEffect(() => {
     return subscribeToken((newToken) => {
       setToken(newToken);
     });
+  }, []);
+
+  // Multi-tab session synchronization listener
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      if ("BroadcastChannel" in window) {
+        channel = new BroadcastChannel("tourai_auth_sync");
+        channel.onmessage = async (event) => {
+          if (event.data?.type === "LOGOUT") {
+            setMemoryToken(null);
+            setToken(null);
+            setUser(null);
+          } else if (event.data?.type === "LOGIN") {
+            // Another tab authenticated; safely synchronize via HttpOnly cookie
+            try {
+              const res = await refreshSessionApi();
+              setMemoryToken(res.access_token);
+              setToken(res.access_token);
+              setUser(res.user);
+            } catch {
+              // Ignore background sync errors
+            }
+          }
+        };
+      }
+    } catch {
+      // Ignored
+    }
+
+    return () => {
+      channel?.close();
+    };
   }, []);
 
   // Retrieve current in-memory token, attempting refresh via HttpOnly cookie if absent
@@ -73,7 +126,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const authError = urlParams.get("auth_error");
 
         if (authError) {
-          console.error("Google Auth error:", authError);
+          const safeMessage = decodeURIComponent(authError.replace(/\+/g, " "));
+          setOauthError(safeMessage || "Google sign-in could not be completed.");
           // Clean URL parameter without reloading
           window.history.replaceState({}, document.title, window.location.pathname);
         } else if (authSuccess) {
@@ -108,12 +162,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = async (email: string, password: string): Promise<{ error: string | null }> => {
+  const login = async (
+    email: string,
+    password: string,
+    rememberMe: boolean = true
+  ): Promise<{ error: string | null }> => {
     try {
-      const res = await loginApi(email, password);
+      const res = await loginApi(email, password, rememberMe);
       setMemoryToken(res.access_token);
       setToken(res.access_token);
       setUser(res.user);
+      broadcastAuthEvent("LOGIN");
       return { error: null };
     } catch (err: unknown) {
       const msg = err instanceof AuthApiError ? err.message : "Failed to sign in.";
@@ -131,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMemoryToken(res.access_token);
       setToken(res.access_token);
       setUser(res.user);
+      broadcastAuthEvent("LOGIN");
       return { error: null };
     } catch (err: unknown) {
       const msg = err instanceof AuthApiError ? err.message : "Registration failed.";
@@ -142,18 +202,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMemoryToken(null);
     setToken(null);
     setUser(null);
+    broadcastAuthEvent("LOGOUT");
     await logoutApi();
   };
 
-  const initiateGoogleLogin = async (): Promise<void> => {
+  const initiateGoogleLogin = async (): Promise<{ error: string | null }> => {
     try {
       const { auth_url } = await getGoogleAuthUrlApi();
       if (auth_url && typeof window !== "undefined") {
         window.location.href = auth_url;
+        return { error: null };
       }
+      return { error: "Google OAuth is not configured or unavailable." };
     } catch (err: unknown) {
-      console.error("Failed to initiate Google OAuth:", err);
-      alert("Google OAuth is not configured or available.");
+      const msg =
+        err instanceof AuthApiError
+          ? err.message
+          : "Google OAuth is not configured or unavailable.";
+      return { error: msg };
     }
   };
 
@@ -242,6 +308,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         token,
         isLoading,
+        oauthError,
+        clearOAuthError,
         login,
         register,
         logout,

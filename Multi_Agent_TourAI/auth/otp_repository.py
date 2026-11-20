@@ -16,7 +16,7 @@ from Multi_Agent_TourAI.utils import get_logger
 logger = get_logger("Multi_Agent_TourAI.auth.otp_repository")
 
 # Security constants
-OTP_EXPIRATION_MINUTES = 5
+OTP_EXPIRATION_MINUTES = 3
 MAX_OTP_ATTEMPTS = 5
 RESEND_COOLDOWN_SECONDS = 60
 RESET_TOKEN_EXPIRATION_MINUTES = 15

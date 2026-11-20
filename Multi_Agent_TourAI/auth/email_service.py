@@ -21,7 +21,7 @@ def get_smtp_config():
         "user": os.getenv("SMTP_USER", "").strip(),
         "password": clean_password,
         "from_email": os.getenv("SMTP_FROM_EMAIL", os.getenv("SMTP_USER", "noreply@tourai.com")).strip(),
-        "from_name": os.getenv("SMTP_FROM_NAME", "Multi-Agent-TourAI").strip(),
+        "from_name": os.getenv("SMTP_FROM_NAME", "TourAI").strip(),
         "use_tls": os.getenv("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes"),
     }
 
@@ -49,8 +49,24 @@ def build_password_reset_email_html(otp: str) -> str:
           <!-- Header -->
           <tr>
             <td style="padding: 32px 36px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); text-align: center;">
-              <span style="font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #14b8a6;">Multi-Agent-TourAI</span>
-              <h1 style="margin: 8px 0 0; font-size: 22px; font-weight: 700; color: #ffffff;">Password Reset Verification</h1>
+              <!-- Brand Logo: Exact Match to App Sidebar/Navbar (Pure HTML/CSS - Never blocked by email clients) -->
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 0 auto 16px auto; display: inline-table; vertical-align: middle;">
+                <tr>
+                  <td style="vertical-align: middle; padding-right: 10px;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width: 32px; height: 32px; background-color: #ffffff; border-radius: 8px;">
+                      <tr>
+                        <td align="center" valign="middle" style="width: 32px; height: 32px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 900; color: #000000; letter-spacing: -1px; line-height: 32px; text-align: center;">
+                          .\\\\
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td style="vertical-align: middle; text-align: left;">
+                    <span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; line-height: 32px;">TourAI<span style="color: #2dd4bf;">.ai</span></span>
+                  </td>
+                </tr>
+              </table>
+              <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #ffffff;">Password Reset Verification</h1>
             </td>
           </tr>
           <!-- Body Content -->
@@ -58,7 +74,7 @@ def build_password_reset_email_html(otp: str) -> str:
             <td style="padding: 32px 36px;">
               <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.6; color: #94a3b8;">Hello,</p>
               <p style="margin: 0 0 24px; font-size: 14px; line-height: 1.6; color: #cbd5e1;">
-                We received a request to reset your Multi-Agent-TourAI account password. Use the verification code below to complete your reset request:
+                We received a request to reset your TourAI account password. Use the verification code below to complete your reset request:
               </p>
               
               <!-- OTP Box -->
@@ -75,7 +91,7 @@ def build_password_reset_email_html(otp: str) -> str:
               </p>
               <p style="margin: 0; font-size: 13px; color: #94a3b8;">
                 Best regards,<br>
-                <strong style="color: #cbd5e1;">Multi-Agent-TourAI Team</strong>
+                <strong style="color: #cbd5e1;">TourAI Team</strong>
               </p>
             </td>
           </tr>
@@ -83,7 +99,7 @@ def build_password_reset_email_html(otp: str) -> str:
           <tr>
             <td style="padding: 20px 36px; background-color: #07090e; border-top: 1px solid rgba(255, 255, 255, 0.04); text-align: center;">
               <p style="margin: 0; font-size: 11px; color: #475569;">
-                &copy; Multi-Agent-TourAI Autonomous Travel Intelligence. Automated message, do not reply.
+                &copy; 2026 TourAI. Multi-Agent AI System. All rights reserved. Automated message, do not reply.
               </p>
             </td>
           </tr>
@@ -110,7 +126,7 @@ This code expires in 5 minutes. Do not share it with anyone.
 
 If you did not request this password reset, you can safely ignore this email.
 
-Multi-Agent-TourAI Team
+TourAI Team
 """
 
 
@@ -136,7 +152,7 @@ def send_password_reset_email(to_email: str, otp: str) -> bool:
 
     try:
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Multi-Agent-TourAI – Password Reset Verification"
+        msg["Subject"] = "TourAI – Password Reset Verification"
         msg["From"] = f"{config['from_name']} <{config['from_email']}>"
         msg["To"] = to_email_clean
 

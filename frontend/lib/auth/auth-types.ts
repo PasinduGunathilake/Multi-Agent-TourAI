@@ -27,11 +27,13 @@ export interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ error: string | null }>;
+  oauthError: string | null;
+  clearOAuthError: () => void;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null }>;
   register: (email: string, password: string, displayName?: string) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
   getToken: () => Promise<string | null>;
-  initiateGoogleLogin: () => Promise<void>;
+  initiateGoogleLogin: () => Promise<{ error: string | null }>;
   requestPasswordSetup: (email: string) => Promise<{ success: boolean; message: string }>;
   completePasswordSetup: (token: string, newPassword: string) => Promise<{ error: string | null }>;
   forgotPassword: (email: string) => Promise<{ success: boolean; message: string }>;

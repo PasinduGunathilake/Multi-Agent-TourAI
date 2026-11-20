@@ -46,15 +46,14 @@ export const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
 );
 Avatar.displayName = "Avatar";
 
-export interface AvatarImageProps
-  extends React.ImgHTMLAttributes<HTMLImageElement> {}
+export type AvatarImageProps = React.ImgHTMLAttributes<HTMLImageElement>;
 
 export const AvatarImage = React.forwardRef<
   HTMLImageElement,
   AvatarImageProps
 >(({ className, src, alt = "", onLoad, onError, ...props }, ref) => {
   const context = useAvatarContext();
-  const imgRef = React.useRef<HTMLImageElement>(null);
+  const imgRef = React.useRef<HTMLImageElement | null>(null);
 
   React.useEffect(() => {
     if (!src) {
@@ -62,21 +61,24 @@ export const AvatarImage = React.forwardRef<
     } else {
       context?.setStatus("loading");
     }
-  }, [src]);
+  }, [src, context]);
 
   // Handle cached image already complete on mount
   React.useEffect(() => {
     if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
       context?.setStatus("loaded");
     }
-  }, [src]);
+  }, [src, context]);
 
   return (
     <img
       ref={(node) => {
-        (imgRef as any).current = node;
-        if (typeof ref === "function") ref(node);
-        else if (ref) (ref as any).current = node;
+        imgRef.current = node;
+        if (typeof ref === "function") {
+          ref(node);
+        } else if (ref && "current" in ref) {
+          ref.current = node;
+        }
       }}
       src={src}
       alt={alt}
@@ -99,8 +101,7 @@ export const AvatarImage = React.forwardRef<
 });
 AvatarImage.displayName = "AvatarImage";
 
-export interface AvatarFallbackProps
-  extends React.HTMLAttributes<HTMLDivElement> {}
+export type AvatarFallbackProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const AvatarFallback = React.forwardRef<
   HTMLDivElement,
@@ -128,7 +129,7 @@ export const AvatarFallback = React.forwardRef<
 });
 AvatarFallback.displayName = "AvatarFallback";
 
-export interface AvatarBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {}
+export type AvatarBadgeProps = React.HTMLAttributes<HTMLSpanElement>;
 
 export const AvatarBadge = React.forwardRef<
   HTMLSpanElement,

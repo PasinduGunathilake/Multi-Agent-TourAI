@@ -65,6 +65,40 @@ class CompletePasswordSetupRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128)
 
 
+class ValidateResetEmailRequest(BaseModel):
+    """
+    Initial email validation payload for password reset flow.
+    """
+    email: EmailStr
+
+
+class ValidateResetEmailResponse(BaseModel):
+    """
+    Response returned when an email is validated for password reset eligibility.
+    """
+    valid: bool
+    email: str
+    message: str
+
+
+class CheckEmailRequest(BaseModel):
+    """
+    Payload for real-time email existence check.
+    """
+    email: EmailStr
+
+
+class CheckEmailResponse(BaseModel):
+    """
+    Response returned for email availability and registration check.
+    """
+    email: str
+    exists: bool
+    has_password: bool = False
+    is_oauth: bool = False
+    message: str
+
+
 class ForgotPasswordRequest(BaseModel):
     """
     Password reset initiation payload.

@@ -368,3 +368,28 @@ def complete_password_setup_with_token(
         logger.error(f"[AUTH] Error completing password setup: {e}", exc_info=True)
         return None
 
+
+def check_password_reset_eligibility(email: str) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+    """
+    Validates whether an email belongs to an active registered account with password authentication enabled.
+    Returns (is_eligible, error_message, user_row).
+    """
+    if not email:
+        return False, "Please enter an email address.", None
+
+    normalized_email = email.strip().lower()
+    user_row = get_user_by_email(normalized_email)
+
+    if not user_row:
+        return False, "This email address is not registered. Please check your email or create an account.", None
+
+    if not user_row.get("is_active", True):
+        return False, "This account is currently inactive. Please contact support.", None
+
+    email_identity = get_email_identity(normalized_email)
+    if not email_identity or not email_identity.get("password_hash"):
+        return False, "This account was registered with Google Sign-In and does not have a password configured. Please sign in with Google.", None
+
+    return True, None, user_row
+
+

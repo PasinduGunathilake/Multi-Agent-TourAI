@@ -6,6 +6,10 @@ from Multi_Agent_TourAI.auth.models import (
     LoginRequest,
     RequestPasswordSetupRequest,
     CompletePasswordSetupRequest,
+    ValidateResetEmailRequest,
+    ValidateResetEmailResponse,
+    CheckEmailRequest,
+    CheckEmailResponse,
     ForgotPasswordRequest,
     VerifyResetOtpRequest,
     ResendResetOtpRequest,
@@ -66,6 +70,9 @@ from Multi_Agent_TourAI.auth.otp_repository import (
     RESEND_COOLDOWN_SECONDS,
     RESET_TOKEN_EXPIRATION_MINUTES,
 )
+from Multi_Agent_TourAI.auth.auth_repository import (
+    check_password_reset_eligibility,
+)
 
 __all__ = [
     "AuthenticatedUser",
@@ -75,6 +82,10 @@ __all__ = [
     "LoginRequest",
     "RequestPasswordSetupRequest",
     "CompletePasswordSetupRequest",
+    "ValidateResetEmailRequest",
+    "ValidateResetEmailResponse",
+    "CheckEmailRequest",
+    "CheckEmailResponse",
     "ForgotPasswordRequest",
     "VerifyResetOtpRequest",
     "ResendResetOtpRequest",
@@ -82,6 +93,7 @@ __all__ = [
     "VerifyOtpResponse",
     "GenericMessageResponse",
     "AuthResponse",
+    "check_password_reset_eligibility",
     "create_access_token",
     "verify_access_token",
     "JwtVerificationError",

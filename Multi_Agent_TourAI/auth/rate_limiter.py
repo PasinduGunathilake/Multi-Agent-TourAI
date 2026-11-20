@@ -15,6 +15,7 @@ DEFAULT_LIMITS: Dict[str, Tuple[int, int]] = {
     "verify_otp": (10, 60),     # 10 OTP verification attempts per minute
     "reset_password": (5, 60),  # 5 password reset submissions per minute
     "resend_otp": (3, 60),      # 3 OTP resend requests per minute
+    "check_email": (60, 60),    # 60 real-time field validation checks per minute
 }
 
 

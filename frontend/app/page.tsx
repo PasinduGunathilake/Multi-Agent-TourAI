@@ -149,14 +149,14 @@ export default function HomePage() {
     }, 100);
   }, []);
 
-  // When user logs out, automatically clear active chat and navigate back to frontpage
+  // When user logs out (or is unauthenticated while chat is active), automatically clear active chat and navigate back to frontpage
   const prevUserRef = useRef(user);
   useEffect(() => {
-    if (prevUserRef.current && !user) {
+    if ((prevUserRef.current && !user) || (!user && hasStarted && !authLoading)) {
       resetToNewTrip();
     }
     prevUserRef.current = user;
-  }, [user, resetToNewTrip]);
+  }, [user, hasStarted, authLoading, resetToNewTrip]);
 
   // ── Load existing session (sidebar click) ────────────────────────────────
   const handleLoadSession = async (sid: string) => {

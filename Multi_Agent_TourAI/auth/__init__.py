@@ -6,6 +6,12 @@ from Multi_Agent_TourAI.auth.models import (
     LoginRequest,
     RequestPasswordSetupRequest,
     CompletePasswordSetupRequest,
+    ForgotPasswordRequest,
+    VerifyResetOtpRequest,
+    ResendResetOtpRequest,
+    ResetPasswordRequest,
+    VerifyOtpResponse,
+    GenericMessageResponse,
     AuthResponse,
 )
 from Multi_Agent_TourAI.auth.jwt_service import (
@@ -43,6 +49,22 @@ from Multi_Agent_TourAI.auth.google_oauth import (
     generate_google_auth_url,
     process_google_callback,
 )
+from Multi_Agent_TourAI.auth.email_service import (
+    send_password_reset_email,
+    is_smtp_configured,
+)
+from Multi_Agent_TourAI.auth.otp_repository import (
+    ensure_password_reset_table,
+    generate_secure_otp,
+    create_password_reset_otp,
+    verify_password_reset_otp,
+    reset_password_with_token,
+    get_last_otp_created_at,
+    OTP_EXPIRATION_MINUTES,
+    MAX_OTP_ATTEMPTS,
+    RESEND_COOLDOWN_SECONDS,
+    RESET_TOKEN_EXPIRATION_MINUTES,
+)
 
 __all__ = [
     "AuthenticatedUser",
@@ -52,6 +74,12 @@ __all__ = [
     "LoginRequest",
     "RequestPasswordSetupRequest",
     "CompletePasswordSetupRequest",
+    "ForgotPasswordRequest",
+    "VerifyResetOtpRequest",
+    "ResendResetOtpRequest",
+    "ResetPasswordRequest",
+    "VerifyOtpResponse",
+    "GenericMessageResponse",
     "AuthResponse",
     "create_access_token",
     "verify_access_token",
@@ -76,4 +104,16 @@ __all__ = [
     "RefreshTokenRecentlyRotatedError",
     "generate_google_auth_url",
     "process_google_callback",
+    "send_password_reset_email",
+    "is_smtp_configured",
+    "ensure_password_reset_table",
+    "generate_secure_otp",
+    "create_password_reset_otp",
+    "verify_password_reset_otp",
+    "reset_password_with_token",
+    "get_last_otp_created_at",
+    "OTP_EXPIRATION_MINUTES",
+    "MAX_OTP_ATTEMPTS",
+    "RESEND_COOLDOWN_SECONDS",
+    "RESET_TOKEN_EXPIRATION_MINUTES",
 ]

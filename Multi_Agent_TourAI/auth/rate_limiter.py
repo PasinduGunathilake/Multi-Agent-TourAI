@@ -9,8 +9,12 @@ logger = get_logger("Multi_Agent_TourAI.auth.rate_limiter")
 
 # Default rate limits: (max_requests, window_seconds)
 DEFAULT_LIMITS: Dict[str, Tuple[int, int]] = {
-    "plan": (5, 60),      # 5 requests per minute for plan creation / streaming
-    "resume": (10, 60),   # 10 requests per minute for resume / resume streaming
+    "plan": (5, 60),            # 5 requests per minute for plan creation / streaming
+    "resume": (10, 60),         # 10 requests per minute for resume / resume streaming
+    "forgot_password": (5, 60), # 5 forgot password requests per minute
+    "verify_otp": (10, 60),     # 10 OTP verification attempts per minute
+    "reset_password": (5, 60),  # 5 password reset submissions per minute
+    "resend_otp": (3, 60),      # 3 OTP resend requests per minute
 }
 
 
@@ -105,7 +109,7 @@ def get_rate_limiter() -> BaseRateLimiter:
         if redis_url:
             try:
                 import redis
-                client = redis.from_url(redis_url)
+                client = redis.from_url(redis_url, socket_connect_timeout=1.0, socket_timeout=1.0)
                 client.ping()
                 _limiter_instance = RedisRateLimiter(client)
             except Exception as e:

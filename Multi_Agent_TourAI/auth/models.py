@@ -64,6 +64,52 @@ class CompletePasswordSetupRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128)
 
 
+class ForgotPasswordRequest(BaseModel):
+    """
+    Password reset initiation payload.
+    """
+    email: EmailStr
+
+
+class VerifyResetOtpRequest(BaseModel):
+    """
+    OTP verification payload for password reset.
+    """
+    email: EmailStr
+    otp: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class ResendResetOtpRequest(BaseModel):
+    """
+    OTP resend request payload.
+    """
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """
+    Password reset completion payload using a verified single-use reset token.
+    """
+    reset_token: str = Field(..., min_length=16, max_length=256)
+    new_password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: Optional[str] = Field(default=None, max_length=128)
+
+
+class VerifyOtpResponse(BaseModel):
+    """
+    Response returned when 6-digit OTP is verified successfully.
+    """
+    message: str
+    reset_token: str
+
+
+class GenericMessageResponse(BaseModel):
+    """
+    Standard generic informational message response.
+    """
+    message: str
+
+
 class AuthResponse(BaseModel):
     """
     Successful authentication response with short-lived access token and user info.

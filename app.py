@@ -48,12 +48,17 @@ from Multi_Agent_TourAI.auth import (
     RefreshTokenRecentlyRotatedError,
     generate_google_auth_url,
     process_google_callback,
+    ValidateResetEmailRequest,
+    ValidateResetEmailResponse,
+    CheckEmailRequest,
+    CheckEmailResponse,
     ForgotPasswordRequest,
     VerifyResetOtpRequest,
     ResendResetOtpRequest,
     ResetPasswordRequest,
     VerifyOtpResponse,
     GenericMessageResponse,
+    check_password_reset_eligibility,
     ensure_password_reset_table,
     generate_secure_otp,
     create_password_reset_otp,
@@ -332,12 +337,55 @@ async def auth_complete_password_setup(payload: CompletePasswordSetupRequest, re
     )
 
 
-@app.post("/api/auth/forgot-password", response_model=GenericMessageResponse)
-async def auth_forgot_password(payload: ForgotPasswordRequest, request: Request):
+@app.post("/api/auth/check-email", response_model=CheckEmailResponse)
+async def auth_check_email(payload: CheckEmailRequest, request: Request):
     """
-    Step 1: Request Password Reset.
-    Generates a secure, 6-digit time-limited OTP and emails it to the registered user.
-    Always returns a generic enumeration-safe success message.
+    Checks email registration status for real-time frontend field validation (Login & Sign Up).
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limiter = get_rate_limiter()
+    is_limited, retry_after = rate_limiter.is_rate_limited(client_ip, "check_email")
+    if is_limited:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many validation requests. Please retry in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    email = payload.email.strip().lower()
+    user_row = get_user_by_email(email)
+    if not user_row:
+        return CheckEmailResponse(
+            email=email,
+            exists=False,
+            has_password=False,
+            is_oauth=False,
+            message="This email address is not registered. Please check your email or create an account.",
+        )
+
+    email_identity = get_email_identity(email)
+    has_password = bool(email_identity and email_identity.get("password_hash"))
+    is_oauth = not has_password
+
+    msg = "This account is registered."
+    if is_oauth:
+        msg = "This account was registered with Google Sign-In and does not have a password configured. Please sign in with Google."
+
+    return CheckEmailResponse(
+        email=email,
+        exists=True,
+        has_password=has_password,
+        is_oauth=is_oauth,
+        message=msg,
+    )
+
+
+@app.post("/api/auth/validate-reset-email", response_model=ValidateResetEmailResponse)
+async def auth_validate_reset_email(payload: ValidateResetEmailRequest, request: Request):
+    """
+    Step 0: Initial Email Validation for Password Reset.
+    Validates email against active registered user accounts with password authentication enabled.
+    Rejects unregistered emails and OAuth-only accounts without generating an OTP or sending an email.
     """
     client_ip = request.client.host if request.client else "unknown"
     rate_limiter = get_rate_limiter()
@@ -350,21 +398,54 @@ async def auth_forgot_password(payload: ForgotPasswordRequest, request: Request)
         )
 
     email = payload.email.strip().lower()
-    generic_msg = "If an account exists with this email address, a password reset code has been sent."
+    is_eligible, err_msg, user_row = check_password_reset_eligibility(email)
+    if not is_eligible:
+        if not user_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=err_msg or "This email address is not registered. Please check your email or create an account.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err_msg or "This account is not eligible for password reset.",
+        )
 
-    user_row = get_user_by_email(email)
-    if not user_row:
-        return GenericMessageResponse(message=generic_msg)
+    return ValidateResetEmailResponse(
+        valid=True,
+        email=email,
+        message="Email is registered and eligible for password reset.",
+    )
 
-    # Safe handling of OAuth-only accounts: Do not generate/overwrite local passwords for Google OAuth users
-    email_identity = get_email_identity(email)
-    if not email_identity or not email_identity.get("password_hash"):
-        logger.info(f"[AUTH] Forgot password requested for OAuth-only account: {email}. Sending notice email.")
-        try:
-            send_oauth_account_notice_email(email)
-        except Exception as e:
-            logger.warning(f"[AUTH] Failed to send oauth notice email: {e}")
-        return GenericMessageResponse(message=generic_msg)
+
+@app.post("/api/auth/forgot-password", response_model=GenericMessageResponse)
+async def auth_forgot_password(payload: ForgotPasswordRequest, request: Request):
+    """
+    Step 1: Request Password Reset.
+    Re-validates that the email belongs to an eligible registered account with password authentication enabled.
+    Generates a secure, 6-digit time-limited OTP and emails it to the registered user.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    rate_limiter = get_rate_limiter()
+    is_limited, retry_after = rate_limiter.is_rate_limited(client_ip, "forgot_password")
+    if is_limited:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many reset requests. Please retry in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    email = payload.email.strip().lower()
+    is_eligible, err_msg, user_row = check_password_reset_eligibility(email)
+    if not is_eligible:
+        if not user_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=err_msg or "This email address is not registered. Please check your email or create an account.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err_msg or "This account is not eligible for password reset.",
+        )
 
     user_id = user_row["id"]
 
@@ -386,7 +467,7 @@ async def auth_forgot_password(payload: ForgotPasswordRequest, request: Request)
     if not email_sent:
         logger.warning(f"[AUTH] Email delivery failure for password reset to {email}")
 
-    return GenericMessageResponse(message=generic_msg)
+    return GenericMessageResponse(message="A 6-digit verification code has been sent to your email.")
 
 
 @app.post("/api/auth/verify-reset-otp", response_model=VerifyOtpResponse)
@@ -457,7 +538,7 @@ async def auth_reset_password(payload: ResetPasswordRequest, request: Request):
 @app.post("/api/auth/resend-reset-otp", response_model=GenericMessageResponse)
 async def auth_resend_reset_otp(payload: ResendResetOtpRequest, request: Request):
     """
-    Resends a fresh 6-digit OTP to the registered user with a 60-second cooldown check.
+    Resends a fresh 6-digit OTP to the registered user with independent eligibility and cooldown checks.
     """
     client_ip = request.client.host if request.client else "unknown"
     rate_limiter = get_rate_limiter()
@@ -470,20 +551,17 @@ async def auth_resend_reset_otp(payload: ResendResetOtpRequest, request: Request
         )
 
     email = payload.email.strip().lower()
-    generic_msg = "If an account exists with this email address, a password reset code has been sent."
-
-    user_row = get_user_by_email(email)
-    if not user_row:
-        return GenericMessageResponse(message=generic_msg)
-
-    email_identity = get_email_identity(email)
-    if not email_identity or not email_identity.get("password_hash"):
-        logger.info(f"[AUTH] Resend OTP requested for OAuth-only account: {email}. Suppressing.")
-        try:
-            send_oauth_account_notice_email(email)
-        except Exception as e:
-            logger.warning(f"[AUTH] Failed to send oauth notice email: {e}")
-        return GenericMessageResponse(message=generic_msg)
+    is_eligible, err_msg, user_row = check_password_reset_eligibility(email)
+    if not is_eligible:
+        if not user_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=err_msg or "This email address is not registered. Please check your email or create an account.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err_msg or "This account is not eligible for password reset.",
+        )
 
     user_id = user_row["id"]
     last_created = get_last_otp_created_at(user_id)
@@ -501,7 +579,7 @@ async def auth_resend_reset_otp(payload: ResendResetOtpRequest, request: Request
     create_password_reset_otp(user_id, otp, expires_in_minutes=OTP_EXPIRATION_MINUTES)
     send_password_reset_email(email, otp)
 
-    return GenericMessageResponse(message=generic_msg)
+    return GenericMessageResponse(message="A fresh 6-digit verification code has been sent to your email.")
 
 
 @app.get("/api/auth/google")

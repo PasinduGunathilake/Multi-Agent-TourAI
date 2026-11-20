@@ -51,6 +51,7 @@ from Multi_Agent_TourAI.auth.google_oauth import (
 )
 from Multi_Agent_TourAI.auth.email_service import (
     send_password_reset_email,
+    send_oauth_account_notice_email,
     is_smtp_configured,
 )
 from Multi_Agent_TourAI.auth.otp_repository import (
@@ -105,6 +106,7 @@ __all__ = [
     "generate_google_auth_url",
     "process_google_callback",
     "send_password_reset_email",
+    "send_oauth_account_notice_email",
     "is_smtp_configured",
     "ensure_password_reset_table",
     "generate_secure_otp",

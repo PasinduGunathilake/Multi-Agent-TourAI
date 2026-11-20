@@ -26,6 +26,8 @@ list_of_dirnfiles = [
     f"{project_name}/auth/dependencies.py",
     f"{project_name}/auth/thread_repo.py",
     f"{project_name}/auth/rate_limiter.py",
+    f"{project_name}/auth/email_service.py",
+    f"{project_name}/auth/otp_repository.py",
     
     # agents module
     f"{project_name}/agents/__init__.py",
@@ -64,6 +66,7 @@ list_of_dirnfiles = [
     f"{project_name}/database/connection.py",
     "migrations/001_create_user_threads.sql",
     "migrations/002_create_application_auth.sql",
+    "migrations/003_create_password_reset_otps.sql",
 
     
     # config & prompts module

@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 from typing import TypeVar, Coroutine, Any
 from concurrent.futures import ThreadPoolExecutor
 
@@ -10,7 +11,7 @@ def run_async_safely(coro: Coroutine[Any, Any, T]) -> T:
     - If no event loop is running on the current thread, executes via asyncio.run().
     - If an event loop is already running on the current thread (e.g. inside FastAPI or an
       async worker), executes the coroutine in a separate worker thread to prevent
-      nested asyncio.run() deadlocks.
+      nested asyncio.run() deadlocks while propagating contextvars (e.g. request_id).
     """
     try:
         loop = asyncio.get_running_loop()
@@ -18,9 +19,10 @@ def run_async_safely(coro: Coroutine[Any, Any, T]) -> T:
         loop = None
 
     if loop is not None and loop.is_running():
-        # Running inside an active event loop: delegate to a background thread
+        # Running inside an active event loop: delegate to a background thread with contextvars preserved
+        ctx = contextvars.copy_context()
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(asyncio.run, coro)
+            future = executor.submit(ctx.run, asyncio.run, coro)
             return future.result()
     else:
         # No event loop on current thread: standard asyncio.run

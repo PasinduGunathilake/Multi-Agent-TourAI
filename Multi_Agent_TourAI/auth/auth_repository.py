@@ -7,7 +7,7 @@ from contextlib import contextmanager
 import psycopg
 from psycopg.rows import dict_row
 from Multi_Agent_TourAI.database.connection import get_db_connection
-from Multi_Agent_TourAI.utils import get_logger
+from Multi_Agent_TourAI.utils import get_logger, mask_email
 
 logger = get_logger("Multi_Agent_TourAI.auth.repository")
 
@@ -139,7 +139,7 @@ def create_user_with_email_identity(
                     (user_id, normalized_email, password_hash),
                 )
 
-        logger.info(f"[AUTH] Successfully registered new user {user_id} ({normalized_email})")
+        logger.info(f"[AUTH] Successfully registered new user {user_id} ({mask_email(normalized_email)})")
         return dict(user_row)
     except psycopg.errors.UniqueViolation:
         raise ValueError("An account with this email address already exists.")

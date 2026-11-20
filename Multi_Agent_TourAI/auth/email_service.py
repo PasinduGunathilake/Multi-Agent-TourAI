@@ -4,7 +4,7 @@ import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
-from Multi_Agent_TourAI.utils import get_logger
+from Multi_Agent_TourAI.utils import get_logger, mask_email
 
 logger = get_logger("Multi_Agent_TourAI.auth.email_service")
 
@@ -149,9 +149,11 @@ def send_password_reset_email(to_email: str, otp: str) -> bool:
     config = get_smtp_config()
     to_email_clean = to_email.strip().lower()
 
+    masked_recipient = mask_email(to_email_clean)
+
     if not is_smtp_configured():
         logger.warning(
-            f"[EMAIL] SMTP is not configured. Simulating delivery to {to_email_clean} "
+            f"[EMAIL] SMTP is not configured. Simulating delivery to {masked_recipient} "
             f"(Configure SMTP_HOST and SMTP_PORT to send real emails)."
         )
         return True
@@ -185,13 +187,13 @@ def send_password_reset_email(to_email: str, otp: str) -> bool:
                     server.login(config["user"], config["password"])
                 server.sendmail(config["from_email"], [to_email_clean], msg.as_string())
 
-        logger.info(f"[EMAIL] Password reset code successfully sent to {to_email_clean}")
+        logger.info(f"[EMAIL] Password reset code successfully sent to {masked_recipient}")
         return True
     except smtplib.SMTPException as se:
-        logger.error(f"[EMAIL] SMTP delivery failed to {to_email_clean}: {se}")
+        logger.error(f"[EMAIL] SMTP delivery failed to {masked_recipient}: {se}")
         return False
     except Exception as e:
-        logger.error(f"[EMAIL] Unexpected error sending email to {to_email_clean}: {e}", exc_info=True)
+        logger.error(f"[EMAIL] Unexpected error sending email to {masked_recipient}: {e}", exc_info=True)
         return False
 
 
@@ -202,11 +204,12 @@ def send_oauth_account_notice_email(to_email: str) -> bool:
     Preserves backend rate-limiting and generic public HTTP responses.
     """
     to_email_clean = to_email.strip().lower()
+    masked_recipient = mask_email(to_email_clean)
     config = get_smtp_config()
 
     if not is_smtp_configured():
         logger.info(
-            f"[EMAIL SIMULATION] Informational OAuth sign-in notice for {to_email_clean}: "
+            f"[EMAIL SIMULATION] Informational OAuth sign-in notice for {masked_recipient}: "
             f"Account is linked with Google OAuth. Please sign in via Google."
         )
         return True
@@ -244,10 +247,10 @@ def send_oauth_account_notice_email(to_email: str) -> bool:
                     server.login(config["user"], config["password"])
                 server.sendmail(config["from_email"], [to_email_clean], msg.as_string())
 
-        logger.info(f"[EMAIL] OAuth notice successfully sent to {to_email_clean}")
+        logger.info(f"[EMAIL] OAuth notice successfully sent to {masked_recipient}")
         return True
     except Exception as e:
-        logger.error(f"[EMAIL] Error sending OAuth notice to {to_email_clean}: {e}")
+        logger.error(f"[EMAIL] Error sending OAuth notice to {masked_recipient}: {e}")
         return False
 
 

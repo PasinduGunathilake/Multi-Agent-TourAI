@@ -356,7 +356,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None, user_id: str
         raise ValueError("user_id is mandatory and must be provided by the authenticated context.")
 
     clean_user_id = str(user_id).strip()
-    logger.info(f"Initializing Workflow | Thread: {thread_id} | User: {clean_user_id}  | Query: '{user_input}'")
+    logger.info(f"Initializing Workflow | Thread: {thread_id} | User: {clean_user_id} | QueryLength: {len(user_input)}")
 
     config = {
         "configurable": {
@@ -445,7 +445,7 @@ def resume_travel_agent(
         raise ValueError("user_id is mandatory and must be provided by the authenticated context.")
 
     clean_user_id = str(user_id).strip()
-    logger.info(f"Resuming Workflow | Thread: {thread_id} | User: {clean_user_id} | Approved: {approved} | Feedback: '{clean_feedback}'")
+    logger.info(f"Resuming Workflow | Thread: {thread_id} | User: {clean_user_id} | Approved: {approved} | FeedbackLength: {len(clean_feedback)}")
 
     config = {
         "configurable": {

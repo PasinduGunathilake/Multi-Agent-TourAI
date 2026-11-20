@@ -84,14 +84,14 @@ def build_password_reset_email_html(otp: str) -> str:
               </div>
 
               <p style="margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: #f59e0b; font-weight: 500;">
-                &#9888; This code expires in <strong>5 minutes</strong>. Do not share it with anyone.
+                &#9888; This code expires in <strong>3 minutes</strong>. Do not share it with anyone.
               </p>
               <p style="margin: 0 0 24px; font-size: 13px; line-height: 1.6; color: #64748b;">
                 If you did not request this password reset, you can safely ignore this email. Your current password remains secure.
               </p>
               <p style="margin: 0; font-size: 13px; color: #94a3b8;">
                 Best regards,<br>
-                <strong style="color: #cbd5e1;">TourAI Team</strong>
+                <strong style="color: #cbd5e1;">TourAI Developer</strong>
               </p>
             </td>
           </tr>

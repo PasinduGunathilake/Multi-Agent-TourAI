@@ -7,7 +7,7 @@ from contextlib import contextmanager
 import psycopg
 from psycopg.rows import dict_row
 from Multi_Agent_TourAI.database.connection import get_db_connection
-from Multi_Agent_TourAI.utils import get_logger, mask_email
+from Multi_Agent_TourAI.utils import get_logger, mask_email, pseudonymize_id
 
 logger = get_logger("Multi_Agent_TourAI.auth.repository")
 
@@ -139,7 +139,7 @@ def create_user_with_email_identity(
                     (user_id, normalized_email, password_hash),
                 )
 
-        logger.info(f"[AUTH] Successfully registered new user {user_id} ({mask_email(normalized_email)})")
+        logger.info(f"[AUTH] Successfully registered new user {pseudonymize_id(user_id)} ({mask_email(normalized_email)})")
         return dict(user_row)
     except psycopg.errors.UniqueViolation:
         raise ValueError("An account with this email address already exists.")
@@ -191,7 +191,7 @@ def create_google_user(
                 """,
                 (user_id, google_sub),
             )
-    logger.info(f"[AUTH] Created new user via Google OAuth: {user_id} (sub={google_sub})")
+    logger.info(f"[AUTH] Created new user via Google OAuth: {pseudonymize_id(user_id)} (sub={google_sub})")
     return dict(user_row)
 
 
@@ -252,12 +252,12 @@ def link_verified_google_identity(
                 if not user_row:
                     raise ValueError(f"User {user_id} not found or deactivated.")
 
-        logger.info(f"[AUTH] Successfully linked verified Google identity (sub={google_sub}) to existing user {user_id}")
+        logger.info(f"[AUTH] Successfully linked verified Google identity (sub={google_sub}) to existing user {pseudonymize_id(user_id)}")
         return dict(user_row)
     except psycopg.errors.UniqueViolation:
         raise ValueError("This Google identity is already associated with another account.")
     except Exception as e:
-        logger.error(f"[AUTH] Error linking Google identity to user {user_id}: {e}", exc_info=True)
+        logger.error(f"[AUTH] Error linking Google identity to user {pseudonymize_id(user_id)}: {e}", exc_info=True)
         raise e
 
 
@@ -362,7 +362,7 @@ def complete_password_setup_with_token(
                 )
                 updated_user = cur.fetchone()
 
-        logger.info(f"[AUTH] Completed password setup for user {user_id}")
+        logger.info(f"[AUTH] Completed password setup for user {pseudonymize_id(user_id)}")
         return dict(updated_user) if updated_user else None
     except Exception as e:
         logger.error(f"[AUTH] Error completing password setup: {e}", exc_info=True)

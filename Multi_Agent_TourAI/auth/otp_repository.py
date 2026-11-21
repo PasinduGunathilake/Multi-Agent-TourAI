@@ -11,7 +11,7 @@ from psycopg.rows import dict_row
 
 from Multi_Agent_TourAI.database import get_db_connection
 from Multi_Agent_TourAI.auth.session_service import revoke_all_user_sessions
-from Multi_Agent_TourAI.utils import get_logger
+from Multi_Agent_TourAI.utils import get_logger, pseudonymize_id
 
 logger = get_logger("Multi_Agent_TourAI.auth.otp_repository")
 
@@ -117,7 +117,7 @@ def get_last_otp_created_at(user_id: uuid.UUID) -> Optional[datetime]:
                     return row["created_at"] if isinstance(row, dict) else row[0]
                 return None
     except Exception as e:
-        logger.error(f"[AUTH] Error checking last OTP time for user {user_id}: {e}", exc_info=True)
+        logger.error(f"[AUTH] Error checking last OTP time for user {pseudonymize_id(user_id)}: {e}", exc_info=True)
         return None
 
 
@@ -158,7 +158,7 @@ def create_password_reset_otp(
             )
         conn.commit()
 
-    logger.info(f"[AUTH] Generated password reset OTP record {record_id} for user {user_id}")
+    logger.info(f"[AUTH] Generated password reset OTP for user {pseudonymize_id(user_id)}")
     return str(record_id)
 
 
@@ -258,7 +258,7 @@ def verify_password_reset_otp(
             )
             conn.commit()
 
-        logger.info(f"[AUTH] Successfully verified reset OTP for user {user_id}")
+        logger.info(f"[AUTH] Successfully verified reset OTP for user {pseudonymize_id(user_id)}")
         return True, reset_token, "Code verified successfully."
 
 
@@ -326,7 +326,7 @@ def reset_password_with_token(
                 )
                 if cur.rowcount == 0:
                     conn.rollback()
-                    logger.warning(f"[AUTH] Attempted password reset on account without email identity: {user_id}")
+                    logger.warning(f"[AUTH] Attempted password reset on account without email identity: {pseudonymize_id(user_id)}")
                     return False, "Password reset is not supported for this account type."
 
                 # 3. Mark all OTP records for this user as consumed
@@ -353,7 +353,7 @@ def reset_password_with_token(
 
         # 5. Revoke all active sessions for this user (global session invalidation)
         revoke_count = revoke_all_user_sessions(user_id)
-        logger.info(f"[AUTH] Successfully reset password for user {user_id}. Revoked {revoke_count} active sessions.")
+        logger.info(f"[AUTH] Successfully reset password for user {pseudonymize_id(user_id)}. Revoked {revoke_count} active sessions.")
         return True, "Your password has been reset successfully. Please log in using your new password."
     except Exception as e:
         logger.error(f"[AUTH] Error resetting password with token: {e}", exc_info=True)

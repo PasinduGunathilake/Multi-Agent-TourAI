@@ -9,7 +9,7 @@ import psycopg
 from psycopg.rows import dict_row
 from fastapi import Response, Request
 from Multi_Agent_TourAI.database import get_db_connection
-from Multi_Agent_TourAI.utils import get_logger
+from Multi_Agent_TourAI.utils import get_logger, pseudonymize_id
 
 logger = get_logger("Multi_Agent_TourAI.auth.session_service")
 
@@ -125,7 +125,7 @@ def rotate_session(raw_refresh_token: str) -> Optional[Tuple[Dict[str, Any], uui
 
                     # Outside grace window: genuine malicious token reuse / replay detected!
                     logger.warning(
-                        f"[SECURITY] Refresh token reuse detected for user {user_id}! "
+                        f"[SECURITY] Refresh token reuse detected for user {pseudonymize_id(user_id)}! "
                         f"Token revoked {elapsed_seconds:.1f}s ago. Revoking all active user sessions."
                     )
                     cur.execute(

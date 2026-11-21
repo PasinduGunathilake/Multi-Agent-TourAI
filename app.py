@@ -86,6 +86,7 @@ from Multi_Agent_TourAI.utils import (
     set_request_id,
     reset_request_id,
     mask_email,
+    pseudonymize_id,
 )
 from Multi_Agent_TourAI.database import (
     get_connection_pool,
@@ -735,7 +736,7 @@ async def plan(
     else:
         thread_id = create_user_thread(user.id, title=user_query[:50])
 
-    logger.info(f"Incoming Travel Request | Thread: {thread_id} | User: {user.id} | QueryLength: {len(user_query)}")
+    logger.info(f"Incoming Travel Request | Thread: {pseudonymize_id(thread_id)} | User: {pseudonymize_id(user.id)} | QueryLength: {len(user_query)}")
 
     try:
         # run Multi-Agent Workflow
@@ -744,7 +745,7 @@ async def plan(
         return result
     except Exception as e:
         logger.error(f"Error executing Multi-Agent workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while executing the travel planning workflow.")
 
 @app.post("/api/plan/resume", response_model=TravelResponse)
 async def resume(
@@ -766,10 +767,10 @@ async def resume(
     if feedback:
         allowed, reason = check_input_safety(feedback, is_feedback=True)
         if not allowed:
-            logger.warning(f"Resume feedback blocked by input guardrail | Thread: {thread_id} | Reason: {reason}")
+            logger.warning(f"Resume feedback blocked by input guardrail | Thread: {pseudonymize_id(thread_id)} | Reason: {reason}")
             raise HTTPException(status_code=400, detail=f"Feedback rejected by safety guardrail: {reason}")
 
-    logger.info(f"Incoming Resume Request | Thread: {thread_id} | User: {user.id} | Approved: {payload.approved} | FeedbackLength: {len(feedback)}")
+    logger.info(f"Incoming Resume Request | Thread: {pseudonymize_id(thread_id)} | User: {pseudonymize_id(user.id)} | Approved: {payload.approved} | FeedbackLength: {len(feedback)}")
     try:
         result = resume_travel_agent(
             thread_id=thread_id,
@@ -784,7 +785,7 @@ async def resume(
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"Error resuming workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while resuming the workflow.")
 
 @app.get("/api/history/{thread_id}")
 async def get_thread_history(
@@ -843,7 +844,7 @@ async def get_thread_history(
 
         return {"turns": turns, "thread_id": thread_id}
     except Exception as e:
-        logger.warning(f"Could not load thread history for {thread_id}: {e}")
+        logger.warning(f"Could not load thread history for {pseudonymize_id(thread_id)}: {e}")
         return {"turns": [], "thread_id": thread_id}
 
 @app.delete("/api/session/{thread_id}")
@@ -856,7 +857,7 @@ async def delete_session(
     """
     success = safe_delete_user_thread(user.id, thread_id)
     if success:
-        logger.info(f"Successfully deleted checkpoints and thread: {thread_id} | User: {user.id}")
+        logger.info(f"Successfully deleted checkpoints and thread: {pseudonymize_id(thread_id)} | User: {pseudonymize_id(user.id)}")
         return {"status": "deleted", "thread_id": thread_id}
     else:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -889,7 +890,7 @@ async def plan_stream(
         thread_id = create_user_thread(user.id, title=user_query[:50])
 
     user_id = user.user_id_str
-    logger.info(f"Incoming Streaming Travel Request | Thread: {thread_id} | User: {user_id} | QueryLength: {len(user_query)}")
+    logger.info(f"Incoming Streaming Travel Request | Thread: {pseudonymize_id(thread_id)} | User: {pseudonymize_id(user_id)} | QueryLength: {len(user_query)}")
 
     config = {
         "configurable": {
@@ -943,7 +944,7 @@ async def plan_stream(
                     if node_name == "__interrupt__":
                         interrupt_items = node_output if isinstance(node_output, (list, tuple)) else [node_output]
                         first_interrupt = interrupt_items[0] if interrupt_items else None
-                        logger.info(f"Workflow paused at HITL interrupt | Thread: {thread_id}")
+                        logger.info(f"Workflow paused at HITL interrupt | Thread: {pseudonymize_id(thread_id)}")
                         approval_payload = _build_approval_payload(thread_id, first_interrupt, accumulated_state)
                         yield f"data: {json.dumps(approval_payload)}\n\n"
                         return
@@ -988,7 +989,7 @@ async def plan_stream(
             post_stream_state = travel_graph.get_state(config)
             if post_stream_state.tasks and any(t.interrupts for t in post_stream_state.tasks):
                 interrupt_item = post_stream_state.tasks[0].interrupts[0]
-                logger.info(f"Workflow paused for Human-in-the-Loop approval | Thread: {thread_id}")
+                logger.info(f"Workflow paused for Human-in-the-Loop approval | Thread: {pseudonymize_id(thread_id)}")
                 approval_payload = _build_approval_payload(thread_id, interrupt_item, accumulated_state)
                 yield f"data: {json.dumps(approval_payload)}\n\n"
                 return
@@ -1006,11 +1007,11 @@ async def plan_stream(
             yield f"data: {json.dumps(complete_payload)}\n\n"
 
         except asyncio.CancelledError:
-            logger.info(f"SSE client disconnected | Thread: {thread_id} | Stream closed normally by client.")
+            logger.info(f"SSE client disconnected | Thread: {pseudonymize_id(thread_id)} | Stream closed normally by client.")
             raise
         except Exception as e:
             logger.error(f"Error in streaming Multi-Agent workflow: {str(e)}", exc_info=True)
-            yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'event': 'error', 'message': 'An unexpected error occurred during execution. Please try again.'})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -1040,11 +1041,11 @@ async def resume_stream(
     if feedback:
         allowed, reason = check_input_safety(feedback, is_feedback=True)
         if not allowed:
-            logger.warning(f"Streaming resume feedback blocked by guardrail | Thread: {thread_id} | Reason: {reason}")
+            logger.warning(f"Streaming resume feedback blocked by guardrail | Thread: {pseudonymize_id(thread_id)} | Reason: {reason}")
             raise HTTPException(status_code=400, detail=f"Feedback rejected by safety guardrail: {reason}")
 
     user_id = user.user_id_str
-    logger.info(f"Incoming Streaming Resume | Thread: {thread_id} | User: {user_id} | Approved: {payload.approved} | FeedbackLength: {len(feedback)}")
+    logger.info(f"Incoming Streaming Resume | Thread: {pseudonymize_id(thread_id)} | User: {pseudonymize_id(user_id)} | Approved: {payload.approved} | FeedbackLength: {len(feedback)}")
 
     config = {
         "configurable": {
@@ -1104,11 +1105,11 @@ async def resume_stream(
             yield f"data: {json.dumps(complete_payload)}\n\n"
 
         except asyncio.CancelledError:
-            logger.info(f"SSE client disconnected | Thread: {thread_id} | Stream closed normally by client.")
+            logger.info(f"SSE client disconnected | Thread: {pseudonymize_id(thread_id)} | Stream closed normally by client.")
             raise
         except Exception as e:
             logger.error(f"Error in streaming resume workflow: {str(e)}", exc_info=True)
-            yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'event': 'error', 'message': 'An unexpected error occurred during resumption. Please try again.'})}\n\n"
 
     return StreamingResponse(
         event_generator(),

@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from contextvars import ContextVar
-from typing import Optional, Any
+from typing import Optional, Any, Union
 
 # Hide third-party HTTP request URLs from leaking credentials/query keys to terminal
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -101,7 +101,7 @@ def pseudonymize_id(raw_id: Any) -> str:
 _SECRET_REDACT_PATTERNS = [
     (re.compile(r"(Bearer\s+)[a-zA-Z0-9_\-\.]{15,}", re.IGNORECASE), r"\1[REDACTED_TOKEN]"),
     (re.compile(r"([?&](?:api[_-]?key|apikey|key|token|secret|password|access_token)=)[^&\s'\"]+", re.IGNORECASE), r"\1[REDACTED]"),
-    (re.compile(r"((?:api[_-]?key|password|passwd|secret|refresh_token)[\s:=]+['\"]?)[a-zA-Z0-9_\-\.]{8,}(['\"]?)", re.IGNORECASE), r"\1[REDACTED]\2"),
+    (re.compile(r"((?:api[_-]?key|password|passwd|secret|token|refresh_token|access_token|auth_token|smtp_password)[\s:=]+['\"]?)[a-zA-Z0-9_\-\.]{8,}(['\"]?)", re.IGNORECASE), r"\1[REDACTED]\2"),
 ]
 
 
@@ -202,7 +202,7 @@ class SafeTextFormatter(logging.Formatter):
             formatted = super().format(record)
         finally:
             record.msg = orig_msg
-        return formatted
+        return redact_sensitive_data(formatted)
 
     def formatException(self, exc_info) -> str:
         raw = super().formatException(exc_info)
@@ -217,15 +217,16 @@ json_formatter = JSONFormatter()
 
 
 # 7. Logger File Cleanup Function (72 hours retention for local development)
-def clean_log(log_dir: Path = LOG_DIR, max_age_hours: int = 72):
+def clean_log(log_dir: Union[Path, str] = LOG_DIR, max_age_hours: int = 72):
     """Cleans up local session log files older than max_age_hours."""
-    if not log_dir.exists():
+    target_dir = Path(log_dir) if isinstance(log_dir, str) else log_dir
+    if not target_dir.exists():
         return
     now_timestamp = datetime.now().timestamp()
     cutoff_seconds = max_age_hours * 3600
 
     try:
-        for log_file in log_dir.glob("*.log*"):
+        for log_file in target_dir.glob("*.log*"):
             if log_file.name == "system_execution.log":
                 continue
             file_mtime = log_file.stat().st_mtime

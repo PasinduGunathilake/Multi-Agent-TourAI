@@ -15,6 +15,8 @@ from Multi_Agent_TourAI.utils.logger import (
     set_request_id,
     reset_request_id,
     mask_email,
+    pseudonymize_id,
+    redact_sensitive_data,
 )
 from Multi_Agent_TourAI.utils.async_runner import run_async_safely
 
@@ -34,4 +36,6 @@ __all__ = [
     "set_request_id",
     "reset_request_id",
     "mask_email",
+    "pseudonymize_id",
+    "redact_sensitive_data",
 ]

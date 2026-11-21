@@ -1,7 +1,9 @@
 import os
 import sys
+import re
 import time
 import json
+import hashlib
 import logging
 from functools import wraps
 from pathlib import Path
@@ -80,6 +82,38 @@ def mask_email(email: Optional[str]) -> str:
     return f"{masked_user}@{domain}"
 
 
+def pseudonymize_id(raw_id: Any) -> str:
+    """
+    Produces a safe, deterministic, pseudonymous identifier from a user or thread ID.
+    E.g., UUID '123e4567-e89b-12d3-a456-426614174000' -> 'anon_e89b12d3'.
+    Enables cross-log correlation without exposing raw database primary keys or PII.
+    """
+    if not raw_id:
+        return "-"
+    clean = str(raw_id).strip()
+    if not clean or clean == "-":
+        return "-"
+    digest = hashlib.sha256(clean.encode("utf-8")).hexdigest()[:8]
+    return f"anon_{digest}"
+
+
+# Regular expressions for scrubbing sensitive keys, tokens, and query parameters
+_SECRET_REDACT_PATTERNS = [
+    (re.compile(r"(Bearer\s+)[a-zA-Z0-9_\-\.]{15,}", re.IGNORECASE), r"\1[REDACTED_TOKEN]"),
+    (re.compile(r"([?&](?:api[_-]?key|apikey|key|token|secret|password|access_token)=)[^&\s'\"]+", re.IGNORECASE), r"\1[REDACTED]"),
+    (re.compile(r"((?:api[_-]?key|password|passwd|secret|refresh_token)[\s:=]+['\"]?)[a-zA-Z0-9_\-\.]{8,}(['\"]?)", re.IGNORECASE), r"\1[REDACTED]\2"),
+]
+
+
+def redact_sensitive_data(text: str) -> str:
+    """Sanitizes text by redacting API keys, tokens, passwords, and sensitive query parameters."""
+    if not isinstance(text, str):
+        text = str(text)
+    for pattern, replacement in _SECRET_REDACT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def sanitize_log_message(msg: Any) -> str:
     """Removes unprintable control characters and limits single-line length."""
     if not isinstance(msg, str):
@@ -101,7 +135,7 @@ class ContextualFilter(logging.Filter):
         return True
 
 
-# 6. Formatters (JSON for Cloud Production & Text for Local Development)
+# 6. Formatters (JSON for Cloud Production & Safe Text for Local Development)
 class JSONFormatter(logging.Formatter):
     """
     Structured JSON log formatter for cloud aggregators (Render, Datadog, Axiom, Better Stack).
@@ -112,6 +146,10 @@ class JSONFormatter(logging.Formatter):
         created_dt = datetime.fromtimestamp(record.created, tz=timezone.utc)
         timestamp_str = created_dt.isoformat()
 
+        # Sanitize and redact sensitive data from the message
+        raw_message = record.getMessage()
+        sanitized_msg = redact_sensitive_data(sanitize_log_message(raw_message))
+
         log_data: dict[str, Any] = {
             "timestamp": timestamp_str,
             "level": record.levelname,
@@ -119,7 +157,7 @@ class JSONFormatter(logging.Formatter):
             "module": record.module,
             "function": record.funcName,
             "line": record.lineno,
-            "message": record.getMessage(),
+            "message": sanitized_msg,
             "service": getattr(record, "service", "tourai-backend"),
             "environment": getattr(record, "environment", "development"),
         }
@@ -129,9 +167,10 @@ class JSONFormatter(logging.Formatter):
         if req_id and req_id != "-":
             log_data["request_id"] = req_id
 
-        # Attach exception stack trace if present
+        # Attach exception stack trace if present with sensitive data redacted
         if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
+            raw_exc = self.formatException(record.exc_info)
+            log_data["exception"] = redact_sensitive_data(raw_exc)
 
         # Attach custom extra fields passed to logger.info(..., extra={...})
         skip_keys = {
@@ -151,10 +190,29 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_data, default=str)
 
 
+class SafeTextFormatter(logging.Formatter):
+    """
+    Human-readable log formatter for local development with automatic sensitive-data redaction.
+    """
+    def format(self, record: logging.LogRecord) -> str:
+        # Pre-redact message before standard formatting
+        orig_msg = record.msg
+        record.msg = redact_sensitive_data(sanitize_log_message(record.msg))
+        try:
+            formatted = super().format(record)
+        finally:
+            record.msg = orig_msg
+        return formatted
+
+    def formatException(self, exc_info) -> str:
+        raw = super().formatException(exc_info)
+        return redact_sensitive_data(raw)
+
+
 # Human-readable format for local development
 LOG_FORMAT_TEXT = "%(asctime)s | %(levelname)-8s | [%(request_id)s] %(name)s:%(funcName)s:%(lineno)d - %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-text_formatter = logging.Formatter(fmt=LOG_FORMAT_TEXT, datefmt=DATE_FORMAT)
+text_formatter = SafeTextFormatter(fmt=LOG_FORMAT_TEXT, datefmt=DATE_FORMAT)
 json_formatter = JSONFormatter()
 
 
@@ -288,6 +346,9 @@ __all__ = [
     "set_request_id",
     "reset_request_id",
     "mask_email",
+    "pseudonymize_id",
+    "redact_sensitive_data",
     "sanitize_log_message",
     "JSONFormatter",
+    "SafeTextFormatter",
 ]
